@@ -19,6 +19,8 @@ CACHE_DIR = PROJECT_ROOT / ".cache"
 # Per-book settings; Book Studio writes its own merged copy (built-in settings + what the user edited in the app)
 META_FILE = Path(os.environ.get("BOOK_META_FILE") or PIPELINE_DIR / "book_meta.json")
 FINAL_DIR = Path(os.environ.get("BOOK_STUDIO_FINAL") or BOOKS_DIR / "final")
+# Each format in its own folder, so PDFs, e-books and Word files are easy to find and hand out separately
+FINAL_KINDS = {".pdf": "pdf", ".epub": "epub", ".docx": "word"}
 
 # Numbered so the folders sort in the order the pipeline runs them
 STAGES = {
@@ -34,6 +36,13 @@ def stage_dir(book: str, stage: str) -> Path:
     path = OUTPUT_DIR / book / STAGES[stage]
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def final_path(filename: str) -> Path:
+    """books/final/<pdf|epub|word>/<filename> — where a finished file goes, by its format."""
+    folder = FINAL_DIR / FINAL_KINDS[Path(filename).suffix.lower()]
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder / filename
 
 
 def find_book(name: str) -> Path:

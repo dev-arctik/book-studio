@@ -43,7 +43,7 @@ Double-click the *Book Studio* icon on your Desktop. No internet needed.
 #step(1)[*+ Add books* — choose the scanned PDFs (or drag them onto the window). Each book appears as its cover.]
 #step(2)[Click a book to check its *title, subtitle and author*. *Choose image…* sets your own cover photo; *Copyright line* adds one to the title page.]
 #step(3)[*Make books* — Book Studio reads every page, then makes the PDF and the e-book (EPUB). A big book takes many hours; the bar at the bottom says how long is left.]
-#step(4)[*Open finished books* — your PDFs and EPUBs are there.]
+#step(4)[*Open finished books* — the PDFs are in the *PDF* folder, the e-books in the *EPUB* folder.]
 
 #note[*Cooling down.* While reading pages the computer works hard. By default Book Studio works 60 minutes, then rests 15, and rests an hour between books (change it in *Settings*). *Pause*, *Stop* or even closing Book Studio loses nothing — pages already read are kept, and *Make books* continues where it stopped. Keep a laptop plugged in.]
 

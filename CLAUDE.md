@@ -13,7 +13,7 @@ Scanned ISKCON books → clean, diacritic-correct PDFs for kids at a charity you
 
 - **One PDF per book.** No chapter-wise PDFs, no duplicate copies of book content. The user cuts chapters by hand.
 - **Clean folder.** Temporary files (crops, Typst data, previews) are deleted after use; no `__pycache__` (scripts set `sys.dont_write_bytecode`); scratch renders go in `.cache/tmp/` and are removed.
-- **Finished book** → `books/final/<book>_en.pdf` (or `_hi`, `.docx`). `books/final/` holds **only processed books** — the original scan stays in `books/originals/<book>.pdf` (keep that name; `find_book` searches all of `books/` for rebuilds). Never name it `_clean`.
+- **Finished book** → `books/final/pdf/<book>_en.pdf` (or `_hi`), its EPUB in `books/final/epub/`, Word copies in `books/final/word/` — one folder per format (the user asked for it on 2026-10-18; `local_env.final_path()` picks the folder). Book Studio does the same with `PDF/` and `EPUB/` in its output folder. `books/final/` holds **only processed books** — the original scan stays in `books/originals/<book>.pdf` (keep that name; `find_book` searches all of `books/` for rebuilds). Never name it `_clean`.
 - **Design is approved — don't change it unasked:** A5, Gentium Book Plus, brown accent `#7a4a12`, centred verse blocks, bold Sanskrit words in word-for-word, no copyright line on the title page. Every PDF opens with the original front cover (page 1 of the scan, colour, its own page shape) — the user asked for it on 2026-10-16; the EPUB uses the same cover.
 - Ask before starting a multi-hour OCR run; the user may want to control when the Mac is busy.
 
@@ -35,7 +35,7 @@ Scripts live in `manual/pipeline/`; run them from the repo root (`poetry run pyt
 | `pdf_to_book.py` | Stage 2 for clean digital PDFs (no OCR): outline → sections, paragraphs by first-line indent (opt-in `margin`/`indent` rules in pdf_text), drop caps rejoined, check-mark-icon list items, tables rebuilt from small print using drawn cell edges (zebra rows defeat `find_tables`), centred lists, verses/translations/[sources] → same `book.json` |
 | `pdf_text.py` | Shared reader for text PDFs (used by the two below): lines → paragraphs by line gap, headings by size, bold/italic, verse breaks; decodes old **Balaram**-font diacritics ("Kåñëa" → Kṛṣṇa) |
 | `pdf_to_epub.py` | Text PDF with an outline → `.epub` beside it: chapters from the outline, cover from page 1, copyright and printed-contents pages left out |
-| `book_to_epub.py` | Processed book (`book.json`) → `books/final/<book>_en.epub` with all figures; reuses `typeset_book.build_typst_data` (same crops as the PDF). Verse anthologies too (verse no., centred Sanskrit, bold-word gloss, translation, poet) |
+| `book_to_epub.py` | Processed book (`book.json`) → `books/final/epub/<book>_en.epub` with all figures; reuses `typeset_book.build_typst_data` (same crops as the PDF). Verse anthologies too (verse no., centred Sanskrit, bold-word gloss, translation, poet) |
 | `epub_pack.py` | Shared EPUB packaging: XHTML template, CSS matching the PDF design, clickable nav + toc.ncx, cover, Gentium embedded |
 | `pdf_to_docx.py` | Text PDF → editable `.docx` beside it (PyMuPDF lines → paragraphs by line gap, headings by size). Not `pdf2docx`: it works per character and corrupts Devanagari at line joins ("बड़ाायोगदान") |
 

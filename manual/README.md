@@ -13,7 +13,7 @@ The scripts in `pipeline/` turn one scanned book into a clean PDF and EPUB, run 
    ```
    Keep the Mac plugged in and awake during the OCR (~15–20 s per page).
 3. Read `output/<book>/2-assembled/report.txt` and fix anything flagged (see below), then re-run.
-4. Check the PDF in `output/<book>/3-clean-pdf/`, then move it to `books/final/<book>_en.pdf`. The original scan stays in `books/originals/`.
+4. Check the PDF in `output/<book>/3-clean-pdf/`, then move it to `books/final/pdf/<book>_en.pdf` (EPUBs go to `books/final/epub/`, Word files to `books/final/word/` — the scripts do that themselves). The original scan stays in `books/originals/`.
 
 A book that arrives as a **clean digital PDF** (real text, not a scan) skips the OCR: `pdf_to_book.py <book>` writes the same `book.json` from its text (sections from the PDF's outline, pictures, tables, verses, drop caps), then `typeset_book.py` and `book_to_epub.py` work as usual.
 

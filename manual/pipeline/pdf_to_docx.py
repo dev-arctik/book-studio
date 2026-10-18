@@ -1,5 +1,5 @@
 # manual/pipeline/pdf_to_docx.py
-# Turns a finished, text-based book PDF (not a scan) into an editable Word file next to it: books/final/<book>.pdf → <book>.docx.
+# Turns a finished, text-based book PDF (not a scan) into an editable Word file: books/final/pdf/<book>.pdf → books/final/word/<book>.docx.
 # The text itself is rebuilt by pdf_text.py (paragraphs, headings, bold/italic, verse breaks); this file only writes Word.
 # Page numbers are dropped (Word numbers its own pages).
 # Usage: poetry run python pipeline/pdf_to_docx.py charu-vilas-vol2_en charu-vilas-vol2_hi
@@ -68,7 +68,7 @@ def convert(book: str) -> None:
         para = doc.add_paragraph(style=None if p["kind"] == "p" else p["kind"])
         for r in p["runs"]:
             add_run(para, r, body, p["kind"])
-    out = pdf_path.with_suffix(".docx")
+    out = local_env.final_path(f"{pdf_path.stem}.docx")
     doc.save(out)
     kinds = Counter(p["kind"] for p in paras)
     print(f"{out.name}: {len(pdf)} pages → {kinds['p']} paragraphs, {kinds['Heading 1']} part headings, {kinds['Heading 2']} headings"

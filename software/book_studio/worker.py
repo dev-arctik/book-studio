@@ -131,8 +131,10 @@ def make_book(book_id: str) -> None:
             sys.argv = ["assemble", book_id]
             (assemble_verses if meta["layout"] == "verses" else assemble_prose).main()
 
+        # Finished books: PDFs and e-books in separate folders, so each set is easy to find and share
         out_dir = Path(settings.output_dir)
-        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / "PDF").mkdir(parents=True, exist_ok=True)
+        (out_dir / "EPUB").mkdir(parents=True, exist_ok=True)
         name = store.safe_filename(meta["title"])
 
         stage = "typeset"
@@ -141,17 +143,16 @@ def make_book(book_id: str) -> None:
 
         sys.argv = ["typeset", book_id]
         typeset_book.main()
-        pdf_out = out_dir / f"{name}.pdf"
+        pdf_out = out_dir / "PDF" / f"{name}.pdf"
         shutil.move(local_env.stage_dir(book_id, "clean-pdf") / f"{book_id}.pdf", pdf_out)
 
         stage = "epub"
         emit("stage", stage="epub")
         import book_to_epub
 
-        local_env.FINAL_DIR.mkdir(parents=True, exist_ok=True)
         book_to_epub.convert(book_id)
-        epub_out = out_dir / f"{name}.epub"
-        shutil.move(local_env.FINAL_DIR / f"{book_id}_en.epub", epub_out)
+        epub_out = out_dir / "EPUB" / f"{name}.epub"
+        shutil.move(local_env.final_path(f"{book_id}_en.epub"), epub_out)
         emit("done", pdf=str(pdf_out), epub=str(epub_out))
     except Stopped:
         emit("stopped")

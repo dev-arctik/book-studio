@@ -44,7 +44,7 @@ Inside the zip, `app/` = `book_studio/` + a copy of `manual/pipeline` (code and 
 | `BookStudio/app/` | The program — replaced by updates |
 | `BookStudio/runtime/` | uv, Python, packages (`venv/`), staged update |
 | Data folder | Mac `~/Library/Application Support/Book Studio`, Windows `%LOCALAPPDATA%\Book Studio`, Linux `~/.local/share/book-studio`: `library.json`, `settings.json`, `covers/`, `model/` (1.4 GB), `work/` (= the pipeline's project root: `books/<id>.pdf`, `output/<id>/1-ocr…`, `tools/llama.cpp`), `logs/` |
-| Output folder | Only `<Title>.pdf` and `<Title>.epub` (default `~/Documents/Book Studio`) |
+| Output folder | `PDF/<Title>.pdf` and `EPUB/<Title>.epub` — nothing else (default `~/Documents/Book Studio`) |
 
 Updates never touch the data folder, so books, pages already read and settings survive them.
 

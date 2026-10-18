@@ -1,5 +1,5 @@
 # manual/pipeline/pdf_to_epub.py
-# Turns a finished, text-based book PDF (not a scan) into an EPUB e-book next to it: books/final/<book>.pdf → <book>.epub.
+# Turns a finished, text-based book PDF (not a scan) into an EPUB e-book: books/final/pdf/<book>.pdf → books/final/epub/<book>.epub.
 # Chapters come from the PDF's own outline and the cover from page 1. Text comes from pdf_text.py; the packaging (clickable
 # contents, embedded Gentium) from epub_pack.py. Our processed books use book_to_epub.py instead (it keeps their photos).
 # Usage: poetry run python pipeline/pdf_to_epub.py bhakti-bhava_en
@@ -98,7 +98,7 @@ def convert(book: str) -> None:
     for i, (name, ps) in enumerate(chapters, 1):
         docs.append((f"chapter-{i:02d}", name, xhtml(name, f"<h1>{html.escape(name)}</h1>\n{chapter_html(ps, body)}")))
 
-    out = pdf_path.with_suffix(".epub")
+    out = local_env.final_path(f"{pdf_path.stem}.epub")
     write_epub(out, book, title, author, docs, cover_jpeg(pdf_path))
     words = sum(len(re.findall(r"\w+", re.sub(r"<[^>]+>", " ", page))) for _, _, page in docs)
     print(f"{out.name}: {len(chapters)} chapters in the contents, {words} words, {out.stat().st_size // 1024} KB")
