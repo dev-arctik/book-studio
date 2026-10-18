@@ -28,6 +28,11 @@
   [*Windows*], [*Start Book Studio.bat* — if a blue box says "Windows protected your PC", click *More info* → *Run anyway*. Only once.],
   [*Linux*], [*start-book-studio.sh* — right-click → *Run as a Program* (or open a terminal in the folder and type `sh start-book-studio.sh`). On Ubuntu, if the window doesn't open: `sudo apt install libxcb-cursor0`.],
 )
+#note[*The Start file opens as text instead* (in VS Code, TextEdit or another editor)? Your computer sends script files to that editor. Start it this way instead:
+- *Mac:* right-click *Start Book Studio.command* → *Open With* → *Terminal* (not listed? *Other…* → Applications → Utilities → Terminal). Or open *Terminal*, type `sh` and a space, drag the file into the window and press Enter.
+- *Windows:* right-click *Start Book Studio.bat* → *Open* (not *Edit*).
+- *Linux:* open a terminal in the BookStudio folder and type `sh start-book-studio.sh`.
+You need this only the first time — afterwards the Book Studio icon on the Desktop opens it.]
 #step(3)[A window shows the setup steps. *Leave it open* until Book Studio itself opens.]
 #step(4)[Book Studio asks for two things: the *page reader* (downloads by itself) and the *reading model* (1.4 GB): click *Download it* — or *Load from a folder* if someone gave you a USB stick with the model. Keep *"Put a Book Studio icon on the Desktop"* ticked and click *Start using Book Studio*.]
 
