@@ -1,4 +1,4 @@
-# pipeline/figures.py
+# manual/pipeline/figures.py
 # Crops book illustrations out of the scanned pages for the clean PDF, using the picture boxes found by the OCR.
 # Framed Deity photos: finds the photo (solid mid-grey area) and the decorative frame's border lines around it, and crops just inside them.
 # Line drawings and unframed photos: trims the white margins; colour pictures keep their colour. Ornaments (drop caps, dividers, corner swirls) are filtered out by is_illustration().
@@ -6,7 +6,9 @@
 import cv2
 import numpy as np
 import pypdfium2 as pdfium
-from PIL import Image
+from PIL import Image, ImageOps
+
+import local_env
 
 CROP_DPI = 300  # sharp in print at the size the template places figures
 MAX_EDGE = 1200  # px — over 300 dpi at the largest size the template prints a figure (10 cm); keeps the PDF small
@@ -72,6 +74,17 @@ def is_colour(region: Image.Image) -> bool:
     """Colour paintings and photo plates stay in colour; black-and-white pictures (grey scans have zero saturation) stay grey."""
     saturation = np.array(region.convert("HSV"))[..., 1]
     return (saturation > 64).mean() >= COLOUR_SHARE  # 64/255 ≈ 0.25: clearly coloured, not just a paper tint
+
+
+def book_cover(pdf_path, meta: dict, height: int = 1600) -> Image.Image:
+    """The chosen cover photo ("cover_file": Book Studio's pick, or books/covers/ in book_meta.json), else page 1 of the scan — one source for PDF and EPUB."""
+    if not meta.get("cover_file"):
+        return cover_image(pdf_path, height)
+    # Relative paths are from the repo root, so the build works from any folder; Book Studio's absolute paths pass through unchanged
+    path = local_env.PROJECT_ROOT / meta["cover_file"]
+    # exif_transpose: phone photos store their rotation separately, and would otherwise come out sideways
+    img = ImageOps.exif_transpose(Image.open(path)).convert("RGB")
+    return img.resize((round(img.width * height / img.height), height), Image.LANCZOS) if img.height > height else img
 
 
 def cover_image(pdf_path, height: int = 1600) -> Image.Image:

@@ -1,4 +1,4 @@
-# pipeline/ocr_book.py
+# manual/pipeline/ocr_book.py
 # Stage 1 of the scanned-book pipeline: OCRs every page of a PDF with Surya and saves one JSON per page under output/<book>/1-ocr/.
 # Resumable — pages that already have a JSON are skipped, so an interrupted overnight run can simply be restarted.
 # --fix re-reads single blocks the full-page OCR got wrong (crop of just that block, so nearby text can't bleed in).
@@ -40,7 +40,8 @@ def ocr_predictor():
         manager.stop()
 
 
-def ocr_all(pdf_path: Path, out_dir: Path, first: int, last: int):
+def ocr_all(pdf_path: Path, out_dir: Path, first: int, last: int, after_chunk=None):
+    """after_chunk(pages) runs once each batch is saved — Book Studio uses it for progress, Pause and cool-down rests."""
     todo = [n for n in range(first, last + 1) if not (out_dir / f"page-{n:03d}.json").exists()]
     print(f"{pdf_path.name}: {last - first + 1} pages, {len(todo)} left to OCR", flush=True)
     if not todo:
@@ -55,6 +56,8 @@ def ocr_all(pdf_path: Path, out_dir: Path, first: int, last: int):
             done = i + len(chunk)
             per_page = (time.time() - start) / done
             print(f"[{done}/{len(todo)}] pages {chunk[0]}-{chunk[-1]} | {per_page:.1f}s/page | ~{per_page * (len(todo) - done) / 60:.0f} min left", flush=True)
+            if after_chunk:
+                after_chunk(chunk)
 
 
 def fix_blocks(pdf_path: Path, out_dir: Path, specs: list[str]):

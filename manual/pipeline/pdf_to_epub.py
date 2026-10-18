@@ -1,4 +1,4 @@
-# pipeline/pdf_to_epub.py
+# manual/pipeline/pdf_to_epub.py
 # Turns a finished, text-based book PDF (not a scan) into an EPUB e-book next to it: books/final/<book>.pdf → <book>.epub.
 # Chapters come from the PDF's own outline and the cover from page 1. Text comes from pdf_text.py; the packaging (clickable
 # contents, embedded Gentium) from epub_pack.py. Our processed books use book_to_epub.py instead (it keeps their photos).
@@ -16,7 +16,7 @@ import pymupdf
 from epub_pack import cover_jpeg, title_page, write_epub, xhtml
 from pdf_text import read_pdf
 
-META_FILE = local_env.PIPELINE_DIR / "book_meta.json"
+META_FILE = local_env.META_FILE
 FRONT_SKIP_RE = re.compile(r"©|\bCopyright\b|\bISBN\b|All rights reserved", re.I)  # copyright pages stay out, as in our PDFs
 
 

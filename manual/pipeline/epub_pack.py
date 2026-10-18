@@ -1,4 +1,4 @@
-# pipeline/epub_pack.py
+# manual/pipeline/epub_pack.py
 # Shared EPUB 3 packaging for pdf_to_epub.py (text PDFs) and book_to_epub.py (our processed books): page template, stylesheet,
 # and writing the .epub — clickable contents in both forms e-readers use (EPUB 3 nav + the older toc.ncx Kindle reads),
 # the cover, images, and Gentium Book Plus embedded so every diacritic shows on any e-reader.
@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import local_env
-from figures import cover_image
+from figures import book_cover
 
 COVER_HEIGHT = 1600  # px — sharp on Kindle screens without bloating the file
 FONTS = {"regular": "GentiumBookPlus-Regular.ttf", "italic": "GentiumBookPlus-Italic.ttf",
@@ -57,6 +57,7 @@ nav#toc a { color: inherit; text-decoration: none; }
 .title .name { font-size: 2.2em; font-style: italic; color: #7a4a12; }
 .title .sub { font-size: 1.1em; color: #6b6158; margin-top: 0.5em; }
 .title .author { font-size: 1.3em; margin-top: 2.5em; }
+.title .copyright { font-size: 0.75em; color: #6b6158; margin-top: 4em; }
 """
 
 
@@ -66,15 +67,17 @@ def xhtml(title: str, body: str) -> str:
             f'<title>{html.escape(title)}</title><link rel="stylesheet" type="text/css" href="style.css"/></head>\n<body>\n{body}\n</body>\n</html>\n')
 
 
-def title_page(title: str, subtitle: str, author: str) -> str:
+def title_page(title: str, subtitle: str, author: str, copyright: str = "") -> str:
+    # The copyright line is opt-in (Book Studio's toggle); the approved design has none
+    extra = f'<div class="copyright">{html.escape(copyright)}</div>' if copyright else ""
     return xhtml(title, f'<div class="title"><div class="name">{html.escape(title)}</div>'
-                        f'<div class="sub">{html.escape(subtitle)}</div><div class="author">{html.escape(author)}</div></div>')
+                        f'<div class="sub">{html.escape(subtitle)}</div><div class="author">{html.escape(author)}</div>{extra}</div>')
 
 
-def cover_jpeg(pdf_path: Path) -> bytes:
-    """The book's front cover (page 1 of the PDF or scan) as a JPEG — the same picture the PDF opens with."""
+def cover_jpeg(pdf_path: Path, meta: dict | None = None) -> bytes:
+    """The book's front cover (the chosen image, else page 1 of the PDF or scan) as a JPEG — the same picture the PDF opens with."""
     buf = io.BytesIO()
-    cover_image(pdf_path, COVER_HEIGHT).save(buf, "JPEG", quality=85, optimize=True)
+    book_cover(pdf_path, meta or {}, COVER_HEIGHT).save(buf, "JPEG", quality=85, optimize=True)
     return buf.getvalue()
 
 

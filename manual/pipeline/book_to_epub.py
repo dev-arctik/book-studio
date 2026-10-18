@@ -1,4 +1,4 @@
-# pipeline/book_to_epub.py
+# manual/pipeline/book_to_epub.py
 # Turns one of our processed books (output/<book>/2-assembled/book.json) into an EPUB for Kindle and other e-readers:
 # books/final/<book>_en.epub, with the same chapters, quotations, notes and photos (with captions) as its PDF.
 # Reuses typeset_book.py's conversion and picture cropping, so the e-book and the PDF can't drift apart; packaging is epub_pack.py.
@@ -118,7 +118,7 @@ def convert(book: str) -> None:
     try:
         data = build_typst_data(book, build_dir)  # crops every figure into build_dir, exactly as for the PDF
         meta, pictures = data["meta"], Pictures()
-        docs = [("title", meta["title"], title_page(meta["title"], meta["subtitle"], meta["author"]))]
+        docs = [("title", meta["title"], title_page(meta["title"], meta["subtitle"], meta["author"], meta.get("copyright", "")))]
         if data["frontispiece"]:
             docs.append(("frontispiece", "Frontispiece", xhtml(meta["title"], "\n".join(figure_html(f, pictures) for f in data["frontispiece"]))))
         for i, sec in enumerate(data["front"], 1):
@@ -132,8 +132,8 @@ def convert(book: str) -> None:
             body = f"{label}<h1>{html.escape(ch['title'])}</h1>{sub}\n{cover}{blocks_html(ch['blocks'], pictures)}\n{verses_html(ch['verses'])}"
             name = f"{ch['number']}. {ch['title']}" if ch["number"] else ch["title"]
             docs.append((f"chapter-{i:02d}", name, xhtml(ch["title"], body)))
-        out = local_env.PROJECT_ROOT / "books" / "final" / f"{book}_en.epub"
-        write_epub(out, book, meta["title"], meta["author"], docs, cover_jpeg(local_env.find_book(book)),
+        out = local_env.FINAL_DIR / f"{book}_en.epub"
+        write_epub(out, book, meta["title"], meta["author"], docs, cover_jpeg(local_env.find_book(book), meta),
                    {name: data for name, data in pictures.files.items()}, start="chapter-01")
     finally:
         shutil.rmtree(build_dir, ignore_errors=True)  # cropped figures live on only inside the e-book

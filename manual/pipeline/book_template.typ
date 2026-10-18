@@ -1,4 +1,4 @@
-// pipeline/book_template.typ
+// manual/pipeline/book_template.typ
 // Typst layout for the clean book PDF: title page, contents, front sections (Foreword, Introduction), then chapters.
 // Chapters hold prose blocks (paragraphs, verse quotes, sources, signatures) and/or verses (Sanskrit, word-for-word, translation, poet).
 // Reads its content from a JSON file passed in by typeset_book.py (sys.inputs.data), so no Sanskrit text is ever escaped into code.
@@ -189,6 +189,8 @@
     #text(size: 15pt, meta.author)
     #v(1fr)
     #for c in meta.credits [#text(size: 10pt, fill: soft, c) \ ]
+    // Opt-in copyright line (Book Studio's toggle); the approved design has none, so finished books are unchanged
+    #if meta.at("copyright", default: "") != "" [#v(0.5em) #text(size: 8.5pt, fill: soft, meta.copyright)]
   ]
 
   // Frontispiece: the original's dedication portrait or Deity photos from its front pages, each on its own page

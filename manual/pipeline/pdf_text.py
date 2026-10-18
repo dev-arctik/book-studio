@@ -1,4 +1,4 @@
-# pipeline/pdf_text.py
+# manual/pipeline/pdf_text.py
 # Shared reader for finished, text-based book PDFs (not scans) — used by pdf_to_docx.py and pdf_to_epub.py.
 # Rebuilds flowing text from PyMuPDF's lines: paragraphs from line spacing, headings from font size, bold/italic runs,
 # verse line breaks, paragraphs re-joined across page breaks, and old Balaram-font diacritics decoded to real Unicode.

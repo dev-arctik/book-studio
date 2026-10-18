@@ -1,4 +1,4 @@
-# pipeline/pdf_to_docx.py
+# manual/pipeline/pdf_to_docx.py
 # Turns a finished, text-based book PDF (not a scan) into an editable Word file next to it: books/final/<book>.pdf → <book>.docx.
 # The text itself is rebuilt by pdf_text.py (paragraphs, headings, bold/italic, verse breaks); this file only writes Word.
 # Page numbers are dropped (Word numbers its own pages).

@@ -29,7 +29,7 @@ Turns scanned ISKCON books (Śrīla Prabhupāda and other ācāryas) into clean,
 | Folder | What it is | Status |
 |---|---|---|
 | `manual/` | The hand-run pipeline every finished book was made with: OCR → assemble → PDF + EPUB, driven from the terminal, one `book_meta.json` entry per book | In use — see `manual/README.md` |
-| `software/` | **Book Studio**, a desktop app (`.dmg` / `.exe` / `.AppImage`) that wraps the same pipeline so volunteers can run it on their own computers: input and output folders, cover picker, copyright toggle, cool-down and core sliders | Planned — see `software/README.md` |
+| `software/` | **Book Studio**, a desktop app that runs the same pipeline on volunteers' computers (Mac, Windows, Linux): one zip, installs itself, cover shelf like Calibre, cover picker, copyright toggle, cool-down and core sliders, self-update from GitHub Releases | v0.1.0 built, tested on Mac — see `software/README.md` |
 
 ## Folder map
 
@@ -38,8 +38,11 @@ education-material/            git repo: code and docs only
 ├── manual/                    hand-run pipeline
 │   ├── README.md              how to make a book, fix report flags, make EPUB/Word copies
 │   └── pipeline/              the Python scripts, book_meta.json, book_template.typ
-├── software/                  Book Studio desktop app (planned)
-│   └── README.md              the agreed plan: tech stack, flow, screens
+├── software/                  Book Studio desktop app
+│   ├── README.md              how it works, running it from the repo, releasing an update
+│   ├── book_studio/           the app (window, worker, setup, updater)
+│   ├── launchers/ assets/ docs/   start scripts, icon + fonts, the volunteer guide
+│   └── build_zip.py           → software/dist/BookStudio-<version>.zip
 ├── README.md · CLAUDE.md      this overview · rules and pitfalls for Claude Code
 ├── pyproject.toml             Python packages for the manual pipeline (Poetry)
 │
@@ -57,4 +60,4 @@ Everything heavy (packages, AI model, caches) stays **inside this folder** — n
 
 ## Git
 
-The repo tracks code and docs only. `.gitignore` keeps out `books/`, `output/`, every `.pdf` / `.epub` / `.docx`, the tools, the model and the environment — book content never goes into git. There is no remote: nothing is pushed anywhere unless that is decided explicitly.
+The repo tracks code and docs only and is published on GitHub (public), so Book Studio can update itself from GitHub Releases. `.gitignore` keeps out `books/`, `output/`, every `.pdf` / `.epub` / `.docx`, `manual/pipeline/book_meta.json` (book titles, captions and OCR-fix text fragments), the tools, the model and the environment — book content never goes to GitHub.

@@ -1,4 +1,4 @@
-# pipeline/typeset_book.py
+# manual/pipeline/typeset_book.py
 # Stage 3 (final): typesets the assembled book (2-assembled/book.json) into one clean PDF of the whole book using Typst and Gentium Book Plus.
 # Works for both layouts in book_meta.json — "verses" (Padyāvalī) and "prose" (Vraja-līlā) — by converting each into one shared template format.
 # Usage: poetry run python pipeline/typeset_book.py padyavali   → output/<book>/3-clean-pdf/<book>.pdf
@@ -15,11 +15,11 @@ from pathlib import Path
 import pypdfium2 as pdfium
 import typst
 
-from figures import cover_image, crop_figure, has_ink
+from figures import book_cover, crop_figure, has_ink
 from ocr_text import PICTURE_LABELS, ocr_pages
 
 TEMPLATE = local_env.PIPELINE_DIR / "book_template.typ"
-META_FILE = local_env.PIPELINE_DIR / "book_meta.json"
+META_FILE = local_env.META_FILE
 
 
 def to_segments(text: str) -> list[dict]:
@@ -175,7 +175,7 @@ def build_typst_data(book: str, build_dir: Path) -> dict:
     meta = json.loads(META_FILE.read_text(encoding="utf-8"))[book]
     figures = FigureCropper(book, build_dir)
     # The original front cover opens the PDF, on a page shaped like the cover itself (no cropping, no white bands)
-    cover = cover_image(local_env.find_book(book))
+    cover = book_cover(local_env.find_book(book), meta)
     cover_path = build_dir / "cover.jpg"
     cover.save(cover_path, quality=85, optimize=True)
     cover_data = {"path": "/" + str(cover_path.relative_to(local_env.PROJECT_ROOT)), "aspect": cover.height / cover.width}
@@ -194,7 +194,9 @@ def render(book: str, output: Path) -> None:
         data_path.write_text(json.dumps(build_typst_data(book, build_dir), ensure_ascii=False), encoding="utf-8")
         inputs = {"data": "/" + str(data_path.relative_to(local_env.PROJECT_ROOT))}  # Typst paths are relative to root
         # ignore_system_fonts: the PDF must look identical on any machine, so only the bundled font is allowed
-        typst.compile(str(TEMPLATE), output=str(output), root=str(local_env.PROJECT_ROOT), font_paths=[str(local_env.FONTS_DIR)], ignore_system_fonts=True, sys_inputs=inputs)
+        # A copy beside the data: Typst only reads files under its root, and Book Studio's root is its own data folder
+        template = shutil.copy(TEMPLATE, build_dir / TEMPLATE.name)
+        typst.compile(str(template), output=str(output), root=str(local_env.PROJECT_ROOT), font_paths=[str(local_env.FONTS_DIR)], ignore_system_fonts=True, sys_inputs=inputs)
     finally:
         shutil.rmtree(build_dir, ignore_errors=True)
 

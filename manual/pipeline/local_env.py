@@ -1,19 +1,24 @@
-# pipeline/local_env.py
+# manual/pipeline/local_env.py
 # Single source of truth for project paths: where books, outputs, tools, and caches live, plus the numbered output stage folders.
 # Also pins every model download/cache to this project folder so nothing lands in global locations.
+# Book Studio (software/) runs this same code against its own data folder by setting the BOOK_STUDIO_* variables below.
 # Import this module FIRST in any pipeline script, before importing surya or huggingface_hub (they read env vars at import time).
 
 import os
 from pathlib import Path
 
-# This file sits in manual/pipeline/; books, outputs, tools and caches stay at the repo root (shared, git-ignored)
+# This file sits in manual/pipeline/; books, outputs, tools and caches stay at the repo root (shared, git-ignored).
+# Book Studio points PROJECT_ROOT at its per-computer data folder instead — the stage layout inside stays the same.
 PIPELINE_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = PIPELINE_DIR.parent.parent
+PROJECT_ROOT = Path(os.environ.get("BOOK_STUDIO_DATA") or PIPELINE_DIR.parent.parent)
 BOOKS_DIR = PROJECT_ROOT / "books"
 OUTPUT_DIR = PROJECT_ROOT / "output"
 TOOLS_DIR = PROJECT_ROOT / "tools"
-FONTS_DIR = TOOLS_DIR / "fonts"
+FONTS_DIR = Path(os.environ.get("BOOK_STUDIO_FONTS") or TOOLS_DIR / "fonts")
 CACHE_DIR = PROJECT_ROOT / ".cache"
+# Per-book settings; Book Studio writes its own merged copy (built-in settings + what the user edited in the app)
+META_FILE = Path(os.environ.get("BOOK_META_FILE") or PIPELINE_DIR / "book_meta.json")
+FINAL_DIR = Path(os.environ.get("BOOK_STUDIO_FINAL") or BOOKS_DIR / "final")
 
 # Numbered so the folders sort in the order the pipeline runs them
 STAGES = {
@@ -40,8 +45,13 @@ def find_book(name: str) -> Path:
     return matches[0]
 
 
+def find_llama_server(tools_dir: Path = TOOLS_DIR) -> Path | None:
+    """The prebuilt llama-server under tools/llama.cpp (Mac/Linux archives unpack into a folder, Windows zips don't)."""
+    return next(iter(sorted((tools_dir / "llama.cpp").rglob("llama-server.exe" if os.name == "nt" else "llama-server"))), None)
+
+
 # Prebuilt llama.cpp binary lives in tools/ instead of a global brew install
-LLAMA_SERVER = next((TOOLS_DIR / "llama.cpp").glob("*/llama-server"), None)
+LLAMA_SERVER = find_llama_server()
 
 # setdefault so a caller can still override from the shell if needed
 os.environ.setdefault("HF_HOME", str(CACHE_DIR / "huggingface"))

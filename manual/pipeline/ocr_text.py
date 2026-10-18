@@ -1,4 +1,4 @@
-# pipeline/ocr_text.py
+# manual/pipeline/ocr_text.py
 # Shared helpers for turning Surya OCR output into clean text — used by both assemblers (assemble_verses.py, assemble_prose.py).
 # Covers HTML clean-up, OCR look-alike letter fixes, line re-joining, paragraphs split by page breaks, title matching and back-cover removal.
 

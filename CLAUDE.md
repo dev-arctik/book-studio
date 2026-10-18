@@ -4,7 +4,7 @@ Scanned ISKCON books → clean, diacritic-correct PDFs for kids at a charity you
 
 ## Hard rules
 
-- **Book content never leaves this Mac.** The PDFs are internal ISKCON material, not released online. No uploads, no artifacts/publishing, no cloud OCR or LLM APIs on book text, no git remote. Git tracks code and docs only — `.gitignore` keeps out `books/`, `output/` and every .pdf/.epub/.docx; never force-add book files. The OCR (Surya via a local `llama-server` on 127.0.0.1) and typesetting (Typst) are fully local — keep it that way.
+- **Book content never leaves our own computers.** The PDFs are internal ISKCON material, not released online. No uploads, no artifacts/publishing, no cloud OCR or LLM APIs on book text, no book content on GitHub. The repo goes to a **public GitHub repo** (approved 2026-10-18, so Book Studio can self-update from GitHub Releases) — code and docs only: `.gitignore` keeps out `books/`, `output/`, every .pdf/.epub/.docx and `manual/pipeline/book_meta.json` (it holds titles, captions and OCR-fix text fragments); release zips leave it out too. Never force-add book files; creating the repo, pushing and publishing releases are confirmed with Devansh first. The OCR (Surya via a local `llama-server` on 127.0.0.1) and typesetting (Typst) are fully local — keep it that way.
 - **Nothing installed globally** (Mac is low on disk). Poetry venv and cache, HF model cache (`HF_HOME`), Surya `MODEL_CACHE_DIR`, the `llama-server` binary and fonts all live inside the project. `manual/pipeline/local_env.py` pins these (`PIPELINE_DIR` = the scripts, `PROJECT_ROOT` = the repo root where books, output, tools and caches live) — every pipeline script imports it first.
 - **Faithful to the original.** Fix OCR errors (checked against the scan); never "correct" the printed book's own typos or spellings.
 - **Never touch the user's personal files** (e.g. in ~/Downloads); only files explicitly named as books.
@@ -40,6 +40,16 @@ Scripts live in `manual/pipeline/`; run them from the repo root (`poetry run pyt
 | `pdf_to_docx.py` | Text PDF → editable `.docx` beside it (PyMuPDF lines → paragraphs by line gap, headings by size). Not `pdf2docx`: it works per character and corrupts Devanagari at line joins ("बड़ाायोगदान") |
 
 Run Python with `poetry run python` (Python 3.12 from Homebrew; system 3.9 is too old for Surya).
+
+## Book Studio (software/)
+
+The desktop app runs `manual/pipeline` **unchanged**, pointed at its own data folder by `BOOK_STUDIO_DATA` / `BOOK_STUDIO_FONTS` / `BOOK_META_FILE` / `BOOK_STUDIO_FINAL` (read in `local_env.py`; unset = the repo layout). So every pipeline change ships to volunteers in the next release — run the regression check first. Pipeline hooks the app relies on: `ocr_all(..., after_chunk=)` (progress, pause, cool-down, stop), `book_cover()` + `cover_file` (chosen cover, PDF and EPUB), `copyright` in the meta (opt-in title-page line), `find_llama_server()`.
+
+- Its environment comes from `software/uv.lock` via uv (`tools/uv/uv`, project-local): dev env in `.cache/bs-dev-venv`, test data in `BOOK_STUDIO_HOME=.cache/bs-test`. Never run `poetry` inside `software/` (it makes a stray `software/.venv`).
+- Releases: bump `__version__`, `poetry run python software/build_zip.py`, `gh release create v<version> <zip>` — publishing is outward-facing, ask Devansh first. `build_zip.py` refuses to pack `book_meta.json` or book files.
+- Surya starts llama-server detached and kills it from an atexit hook, so the worker stops via the control file (never a hard kill); after a forced kill, `engine.stop_stray_server()` uses Surya's sentinel in `~/.cache/datalab/surya/`.
+- A test that presses the general *Make books* queues **every** unfinished book in the test library — real OCR for hours. In tests, pass the book: `make_books(["id"])`.
+- Windows/Linux paths (launchers, Vulkan detection, Desktop icons) are untested on real machines.
 
 ## How to verify (do this every time)
 

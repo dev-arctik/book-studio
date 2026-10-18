@@ -1,4 +1,4 @@
-# pipeline/pdf_to_book.py
+# manual/pipeline/pdf_to_book.py
 # Stage 2 for books that arrive as clean digital PDFs (real text, not scans — e.g. Heart and Soul Connection): no OCR needed.
 # Reads the text with pdf_text.py and writes the same output/<book>/2-assembled/book.json the scanned books produce, so
 # typeset_book.py (our A5 design) and book_to_epub.py work unchanged. Sections come from the PDF's outline; pictures keep their
@@ -16,7 +16,7 @@ import pymupdf
 
 from pdf_text import body_metrics, indent_band, page_lines, paragraphs
 
-META_FILE = local_env.PIPELINE_DIR / "book_meta.json"
+META_FILE = local_env.META_FILE
 SKIP_SECTIONS = {"title page", "copyright", "contents", "table of contents"}  # we build our own title page and contents
 TABLE_SIZE = 0.7  # lines printed smaller than this × body size are table text (small caps opening a section are bigger)
 ROW_GAP = 10  # pt — table lines further apart than this start a new row (lines inside one cell sit ~7.5 pt apart)

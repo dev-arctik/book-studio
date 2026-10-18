@@ -1,0 +1,30 @@
+# software/pyproject.toml
+# Python packages for Book Studio, installed by uv into the app's own runtime folder on each computer (nothing global).
+# Versions match the manual pipeline that made the 13 finished books, so OCR and layout behave the same everywhere.
+
+[project]
+name = "book-studio"
+version = "0.1.0"
+description = "Turns scanned ISKCON books into clean PDFs and EPUBs, fully offline"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "pyside6-essentials (>=6.12,<6.13)",  # widgets only; the full "pyside6" adds ~400 MB of Qt add-ons we never use
+    "surya-ocr (==0.22.1)",
+    "typst (==0.15.0)",
+    "pymupdf (>=1.28.2,<2.0.0)",
+    "opencv-python-headless (==4.11.0.86)",
+    "torch (==2.14.1)",  # listed directly so the Linux CPU-only source below applies
+]
+
+[tool.uv]
+package = false
+
+# Linux would otherwise get PyTorch with NVIDIA libraries (~2.5 GB); OCR runs in llama-server, so the CPU build is enough.
+# Windows and Mac wheels on PyPI are already CPU/Metal-only.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

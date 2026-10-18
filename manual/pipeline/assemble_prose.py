@@ -1,4 +1,4 @@
-# pipeline/assemble_prose.py
+# manual/pipeline/assemble_prose.py
 # Stage 2 for prose books (layout "prose" in book_meta.json, e.g. Vraja-līlā): per-page OCR → sections → typed blocks.
 # Sections come from the book's own contents list, matched in order, so none can be missed or invented — including Parts, and index
 # sections that are dropped. Block types: paragraph, verse quote, source, signature, subheading, figure, scene break and endnote.
@@ -17,7 +17,7 @@ from dataclasses import dataclass, field, asdict
 from figures import is_illustration
 from ocr_text import PICTURE_LABELS, apply_text_fixes, ascii_key, blank_pages, clean_inline, drop_back_cover, ends_sentence, is_all_italic, join_lines, ocr_pages, plain
 
-META_FILE = local_env.PIPELINE_DIR / "book_meta.json"
+META_FILE = local_env.META_FILE
 MARGIN_LABELS = {"PageHeader", "PageFooter"}
 # Contents lines look like "Kokilavan – 41" or "Foreword – x"
 TOC_LINE_RE = re.compile(r"^(.+?)\s*[–—-]\s*([ivxlc]+|\d{1,3})$", re.I)

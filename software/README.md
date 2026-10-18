@@ -1,111 +1,83 @@
 # software/README.md
 
-# Book Studio — desktop app (planned)
+# Book Studio — desktop app
 
-A downloadable app that runs the `manual/` pipeline on any volunteer's computer — no terminal, no internet once installed. Each person picks an input folder of PDFs and an output folder; the app produces the same clean PDF + EPUB as the manual pipeline. Results are shared between people by hand afterwards.
+A desktop window around the `manual/` pipeline, so volunteers can turn scanned books into the same clean PDF + EPUB on their own computer — Mac, Windows or Linux, fully offline after the first start. Handed out as **one zip**; it installs itself into its own folder and updates itself from GitHub Releases.
 
-Status: **plan agreed, not built yet.** Open decisions are at the bottom.
+Status: **v0.1.0 built.** Tested on the M4 Mac: setup (page reader + model), real OCR, chapters, PDF and EPUB identical to the manual pipeline's, the window offscreen. Windows and Linux launchers are written but untested on real machines.
 
-## Tech stack
-
-| Part | Tool | Why |
-|---|---|---|
-| Window | **PySide6 (Qt 6)** | Native window on Mac, Windows and Linux; same language as the pipeline, so no bridge layer |
-| Logic + pipeline | **Python 3.12**, the `manual/pipeline` code reshaped into a library | Proven on 13 books (all rebuild byte-identical) — not rewritten |
-| Background work | **QProcess** worker process | Window never freezes; Pause/Stop are clean; an OCR crash can't take the window down |
-| Settings | JSON files in the app data folder | Readable, nothing to install |
-| OCR | **llama-server** + Surya OCR 2 model (1.4 GB) | Same as manual |
-| PDF / EPUB | **Typst** + Gentium + `book_template.typ`; `epub_pack` | Same approved design |
-| Packaging | **PyInstaller** | One tool for all three systems (must run on each system to build for it) |
-
-| System | Installer | OCR runs on |
-|---|---|---|
-| Mac (Apple chip) | `BookStudio.dmg` | Metal |
-| Windows | `BookStudio-Setup.exe` (Inno Setup) | Vulkan (NVIDIA/AMD/Intel), CPU fallback |
-| Linux | `BookStudio.AppImage` | Vulkan, CPU fallback |
-
-The OCR model is downloaded on first launch, or loaded from a file (USB copy) — keeps the installer ~250 MB.
-
-## Flow
+## How volunteers use it
 
 ```
- First launch:  install → "OCR model not found" → [Download] or [Load from file…]
-                → pick Input folder and Output folder
-
- Every time:    app lists the PDFs in Input
-                → per book (optional): title · subtitle · author · cover · copyright
-                → [Start]
-
-   OCR 4 pages at a time ──work N min──► rest M min ──► … (every page saved at once)
-        │ all pages done
-        ▼
-   assemble → PDF + EPUB (seconds) → Output/<book>_en.pdf + .epub
-        │
-        ▼
-   rest between books → next book
+ BookStudio-0.1.0.zip → unzip → double-click "Start Book Studio" (.command / .bat / .sh)
+   first time: uv → Python + packages into BookStudio/runtime/ (~10 min, internet)
+   → window: setup dialog (page reader download, reading model download or "load from folder"), Desktop icon
+ every day: Desktop icon → window → + Add books → (title / cover / copyright) → ▶ Make books → Open finished books
 ```
 
-Cool-down only happens between 4-page batches; pausing, resting or closing the app loses at most the batch in progress. Changing a finished book's cover or title is a **Rebuild** (seconds, no OCR).
+`BookStudio/HOW TO START.pdf` (from `docs/how-to-start.typ`) walks through this, including the one-time "unidentified developer" / "Windows protected your PC" warnings.
 
-## Screen
+## Folder layout
 
 ```
-┌─ Book Studio ─────────────────────────────────────────────────┐
-│ Input  [ D:\books\in  ] [Browse]  Output [ D:\books\out ] [Browse]
-├──────────────────────────┬────────────────────────────────────┤
-│ BOOKS                    │ WITHOUT FEAR                       │
-│ ✅ padyavali.pdf          │ Title    [Without Fear           ] │
-│ ▶ without-fear.pdf       │ Subtitle [The Life and Times …   ] │
-│ ⏸ new-book.pdf           │ Author   [Satsvarūpa dāsa Gosvāmī] │
-│                          │ COVER  ┌──────┐ (•) Page 1 of PDF  │
-│                          │        │previ.│ ( ) Own image      │
-│                          │        └──────┘ [ Choose image… ]  │
-│                          │ Copyright line on title page [off] │
-│                          │ ▸ Book fixes (advanced)  [Rebuild] │
-├──────────────────────────┴────────────────────────────────────┤
-│ ████████████░░░░░░  368/594 pages · resting 11:42             │
-│ [ Start ] [ Pause ]   Cool-down: work [60] rest [15] between [60]
-│ ▸ Advanced: CPU cores ●─────○── 4/10 · OCR slots ●─○──── 4    │
-└───────────────────────────────────────────────────────────────┘
+software/
+├── book_studio/            the app (Python package; `python -m book_studio`)
+│   ├── paths.py            program / runtime / data folders; pipeline_env() points manual/pipeline at the data folder
+│   ├── store.py            settings.json + library.json; meta_for() turns a book into its book_meta.json entry
+│   ├── engine.py           llama-server download per OS (Metal / Vulkan → CPU fallback), model download/copy, Desktop icon
+│   ├── worker.py           one book in its own process: OCR (with pause / cool-down / stop between batches) → assemble → PDF → EPUB
+│   ├── updater.py          GitHub Releases check, download, staging in runtime/update/
+│   └── ui/                 main window (cover shelf, book panel, status bar), dialogs, style
+├── launchers/              Start Book Studio.command / .bat, start-book-studio.sh — install with uv, apply updates, open the window
+├── assets/                 icon (png/ico/icns), Gentium fonts + OFL licence
+├── docs/how-to-start.typ   the volunteer guide
+├── build_zip.py            → dist/BookStudio-<version>.zip
+└── pyproject.toml, uv.lock exact package versions for all three systems (Linux gets CPU-only PyTorch)
 ```
 
-| Setting | Scope | Effect |
-|---|---|---|
-| Title, subtitle, author | Per book | Title page |
-| Cover — page 1 of PDF (default) or own image, picked one book at a time; the image is copied into the app's data | Per book | First PDF page + EPUB cover |
-| Copyright line (default off) | Per book | Title page |
-| Book fixes (advanced) | Per book | The `book_meta.json` options (skip pages, running heads, text fixes…) |
-| Work / rest / between-books minutes | Per computer | When OCR pauses |
-| CPU cores slider | Per computer | `llama-server --threads` |
-| OCR slots slider (shows memory estimate) | Per computer | `SURYA_INFERENCE_PARALLEL` |
+Inside the zip, `app/` = `book_studio/` + a copy of `manual/pipeline` (code and template only) + `assets/` + `pyproject.toml` + `uv.lock`. There is one pipeline: the app runs `manual/pipeline` unchanged, pointed at its data folder through the `BOOK_STUDIO_*` variables in `local_env.py`.
 
-The 13 finished books' settings ship built in, so their scans give the same result as the manual pipeline.
+## Where things live on a volunteer's computer
 
-## Where files live
-
-| | Contents |
+| | |
 |---|---|
-| Input folder (user's) | Source PDFs, cover photos — only read, never changed |
-| Output folder (user's) | Only `<book>_en.pdf` and `<book>_en.epub` |
-| App data (hidden) | Per-book OCR pages, cover copy, settings; app settings; the model. Mac `~/Library/Application Support/Book Studio`, Windows `%LOCALAPPDATA%\Book Studio`, Linux `~/.local/share/book-studio`. A **Clear working files** button frees the space after a book |
+| `BookStudio/app/` | The program — replaced by updates |
+| `BookStudio/runtime/` | uv, Python, packages (`venv/`), staged update |
+| Data folder | Mac `~/Library/Application Support/Book Studio`, Windows `%LOCALAPPDATA%\Book Studio`, Linux `~/.local/share/book-studio`: `library.json`, `settings.json`, `covers/`, `model/` (1.4 GB), `work/` (= the pipeline's project root: `books/<id>.pdf`, `output/<id>/1-ocr…`, `tools/llama.cpp`), `logs/` |
+| Output folder | Only `<Title>.pdf` and `<Title>.epub` (default `~/Documents/Book Studio`) |
 
-## Build order
+Updates never touch the data folder, so books, pages already read and settings survive them.
 
-| Phase | Result |
-|---|---|
-| 1 | Pipeline as a library — settings passed in, not read from the repo; regression `cmp` identical for all 13 books |
-| 2 | PySide6 window: folders, queue, progress, cool-down, sliders, cover and copyright |
-| 3 | Mac `.dmg`, tested on the M4 |
-| 4 | Windows `.exe` and Linux `.AppImage`, tested on real machines |
-| 5 | Report-flag view with scan previews + Book fixes panel |
+## Book settings (the 13 finished books' fixes)
+
+`manual/pipeline/book_meta.json` holds titles, captions and OCR-fix text from the books, so it is **not** in git and **not** in the zip (the repo and releases are public). Share it privately; volunteers load it with Settings → Advanced → *Import book settings…* (it applies to books whose file name matches, e.g. `without-fear.pdf`). Running from the repo, the app reads it directly. New books need no settings; if one comes out wrong, *Book fixes…* edits the same options per book.
+
+## Running from the repo (development)
+
+```
+# once: the app's own environment, from uv.lock (uv lives in tools/uv, not installed globally)
+UV_CACHE_DIR=.cache/uv UV_PROJECT_ENVIRONMENT=$PWD/.cache/bs-dev-venv UV_PYTHON_INSTALL_DIR=$PWD/.cache/uv-python \
+  UV_PYTHON_PREFERENCE=only-managed tools/uv/uv sync --frozen --project software
+# run (BOOK_STUDIO_HOME keeps test data away from the real data folder)
+cd software && BOOK_STUDIO_HOME=$PWD/../.cache/bs-test ../.cache/bs-dev-venv/bin/python -m book_studio
+```
+
+Don't run `poetry` inside `software/`: Poetry treats `software/pyproject.toml` as its own project and creates a stray `software/.venv`. Poetry is for the manual pipeline at the repo root.
+
+## Releasing an update
+
+1. Change the code; if `manual/pipeline` changed, prove the 13 books are unchanged (`CLAUDE.md` → How to verify).
+2. Bump `__version__` in `book_studio/__init__.py` (e.g. 0.1.0 → 0.1.1). Changed packages: edit `pyproject.toml`, then `tools/uv/uv lock --project software`.
+3. `poetry run python software/build_zip.py` → `software/dist/BookStudio-0.1.1.zip` (it refuses to pack `book_meta.json` or any book file).
+4. Publish it as a GitHub Release whose tag is the version: `gh release create v0.1.1 software/dist/BookStudio-0.1.1.zip --title "Book Studio 0.1.1" --notes "What changed"` — the notes are shown in the update prompt.
+
+Every copy checks `UPDATE_REPO` (`book_studio/__init__.py`, now `dev-arctik/book-studio`) a few seconds after it opens; only the version number is fetched. *Update now* downloads the zip, unpacks `app/` into `runtime/update/`, closes the window and runs the launcher with `--apply-update`, which swaps `app/`, installs changed packages and reopens Book Studio. The launchers themselves are not replaced by updates — a change to them means sending the new zip by hand.
 
 ## Known limits
 
-- A new book with an unusual layout may still need someone to set a Book fix — the 13 finished books each needed at least one.
-- Machines without a usable graphics card run OCR on CPU, roughly 5–10× slower than the M4.
-- Unsigned installers show a warning (Mac "unidentified developer", Windows SmartScreen) unless certificates are bought.
-
-## Open decisions
-
-1. How the three builds are made: GitHub Actions (code only, never books — needs a git remote) or one machine of each system.
-2. Signing: accept the warnings with a how-to-open note, or buy certificates.
+- Windows and Linux are untested on real machines (launchers, Vulkan detection, Desktop icons).
+- Unsigned: first start shows the Mac "unidentified developer" or Windows SmartScreen warning (the guide explains it).
+- A new book with an unusual layout may need *Book fixes* — each of the 13 finished books needed at least one.
+- Machines without a usable graphics card read pages on the processor, roughly 5–10× slower than the M4.
+- PyTorch (~540 MB) is installed because Surya imports it, though the llama.cpp OCR barely uses it; dropping it is a planned update.
+- Licences: Surya's code is GPL-3.0 and its model has its own licence (free for small organisations); Gentium is OFL. Distributing the app means its source must be available — the public repo covers that.

@@ -1,4 +1,4 @@
-# pipeline/run_book.py
+# manual/pipeline/run_book.py
 # One command for the whole scanned-book pipeline: OCR → assemble → typeset one clean PDF of the whole book.
 # The assembler is chosen by the book's "layout" in book_meta.json (verses → assemble_verses.py, prose → assemble_prose.py).
 # Each stage runs as its own process, so the OCR model's memory is freed before typesetting starts; OCR resumes where it left off.
@@ -16,7 +16,7 @@ ASSEMBLERS = {"verses": "assemble_verses.py", "prose": "assemble_prose.py"}
 
 def main():
     book = local_env.find_book(sys.argv[1]).stem
-    meta = json.loads((local_env.PIPELINE_DIR / "book_meta.json").read_text(encoding="utf-8"))
+    meta = json.loads(local_env.META_FILE.read_text(encoding="utf-8"))
     if book not in meta:
         sys.exit(f"Add '{book}' to manual/pipeline/book_meta.json first (title, author, layout: verses or prose)")
     here = Path(__file__).parent
