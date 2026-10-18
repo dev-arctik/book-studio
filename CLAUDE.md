@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Scanned ISKCON books → clean, diacritic-correct PDFs for kids at a charity youth forum. Two parts: `manual/` (the hand-run pipeline every finished book was made with — run steps in `manual/README.md`) and `software/` (Book Studio, a planned desktop app wrapping that pipeline — plan in `software/README.md`). The root `README.md` has the folder map and book status; this file holds the rules, preferences and pitfalls.
+Scanned ISKCON books → clean, diacritic-correct PDFs for kids at a charity youth forum. Two parts: `manual/` (the hand-run pipeline every finished book was made with — run steps in `manual/README.md`) and `software/` (Book Studio, a planned desktop app wrapping that pipeline — plan in `software/README.md`). The root `README.md` is for users of the software (why it exists, install, use) — keep book lists out of it; `manual/README.md` has the run steps and the local folder map; `books/STATUS.md` (local, git-ignored) has which books are done. This file holds the rules, preferences and pitfalls.
 
 ## Hard rules
 

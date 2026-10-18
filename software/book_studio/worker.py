@@ -79,7 +79,7 @@ def is_digital(book: store.Book, pdf: Path) -> bool:
 
 FRIENDLY = {
     "starting": "The page reader could not start. Try Settings → 'Set up the page reader again', or restart the computer.",
-    "ocr": "Reading the pages stopped unexpectedly. The pages already read are saved — press Make books to continue.",
+    "ocr": "Reading the pages stopped unexpectedly. The pages already read are saved — press Make ticked books to continue.",
     "assemble": "Book Studio could not work out this book's chapters by itself. Open Check book to see what it found, or send the book to Devansh.",
     "typeset": "Making the PDF failed. Please send the log file (Check book → Open log) to Devansh.",
     "epub": "Making the EPUB failed. Please send the log file (Check book → Open log) to Devansh.",
@@ -96,7 +96,9 @@ def make_book(book_id: str) -> None:
     meta = json.loads(local_env.META_FILE.read_text(encoding="utf-8"))[book_id]
     stage = "starting"
     try:
-        if is_digital(book, pdf):
+        digital = is_digital(book, pdf)
+        emit("kind", kind="digital" if digital else "scanned")
+        if digital:
             stage = "assemble"
             emit("stage", stage="text")
             import pdf_to_book

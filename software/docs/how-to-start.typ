@@ -40,17 +40,17 @@ You need this only the first time — afterwards the Book Studio icon on the Des
 
 Double-click the *Book Studio* icon on your Desktop. No internet needed.
 
-#step(1)[*+ Add books* — choose the scanned PDFs (or drag them onto the window). Each book appears as its cover.]
-#step(2)[Click a book to check its *title, subtitle and author*. *Choose image…* sets your own cover photo; *Keep the book's copyright page* (on unless you untick it) keeps the original's page with ©, ISBN and publisher.]
-#step(3)[*Make books* — Book Studio reads every page, then makes the PDF and the e-book (EPUB). A big book takes many hours; the bar at the bottom says how long is left.]
+#step(1)[*+ Add books* — choose PDF files or a whole folder (or drag them onto the window). Each book gets its own row.]
+#step(2)[*Tick* the books to make (*Select all* ticks every one). Click a book's row to check its *title, subtitle and author*, choose your own cover photo, or untick *Keep the book's copyright page*.]
+#step(3)[*Make ticked books* — each book goes through *Read → Chapters → PDF → EPUB*; its row shows where it is, with pages done and time left, and the card at the top shows the whole run. A big book takes many hours.]
 #step(4)[*Open finished books* — the PDFs are in the *PDF* folder, the e-books in the *EPUB* folder.]
 
-#note[*Cooling down.* While reading pages the computer works hard. By default Book Studio works 60 minutes, then rests 15, and rests an hour between books (change it in *Settings*). *Pause*, *Stop* or even closing Book Studio loses nothing — pages already read are kept, and *Make books* continues where it stopped. Keep a laptop plugged in.]
+#note[*Cooling down.* While reading pages the computer works hard. By default Book Studio works 60 minutes, then rests 15, and rests an hour between books (change it in *Settings*). *Pause*, *Stop* or even closing Book Studio loses nothing — pages already read are kept, and *Make ticked books* continues where it stopped. Keep a laptop plugged in.]
 
 == If something goes wrong
 
-- After a book is made, click *Check book*: it says whether every chapter was found and lists pages worth a look, beside the scanned page. A book showing *Needs attention* explains what went wrong there too — send that book to Devansh if it isn't clear.
-- *Changed* means you edited the book after it was made — click *Make books* again; it takes seconds.
+- After a book is made, open its *⋯* menu → *Check book*: it says whether every chapter was found and lists pages worth a look, beside the scanned page. A book showing *Needs attention* explains what went wrong there too — send that book to Devansh if it isn't clear.
+- *Changed* means you edited the book after it was made — press *Make ticked books* again; it takes seconds.
 - *Updates* come by themselves: when Book Studio offers one, click *Update now*. Your books and settings are kept.
 
 #align(center, text(size: 9pt, fill: soft)[Your books never leave your computer. Book Studio only goes online to download itself, the reading model and updates.])

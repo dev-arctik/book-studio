@@ -39,6 +39,13 @@ QPushButton#Link {{ border: none; color: {ACCENT}; padding: 4px; text-decoration
 QLineEdit, QPlainTextEdit, QSpinBox, QComboBox {{ background: white; border: 1px solid {LINE}; border-radius: 6px; padding: 6px; }}
 QLineEdit:focus, QPlainTextEdit:focus, QSpinBox:focus, QComboBox:focus {{ border-color: {ACCENT}; }}
 QListWidget#Grid {{ background: {BG}; border: none; }}
+#ListBody {{ background: {BG}; }}
+#Row {{ background: white; border: 1px solid {LINE}; border-radius: 10px; }}
+#Row:hover {{ border-color: #cdbfae; }}
+#Row[current="true"] {{ background: {ACCENT_SOFT}; border: 2px solid {ACCENT}; }}
+#RunCard {{ background: white; border: 1px solid {LINE}; border-radius: 12px; }}
+QLabel#RunTitle {{ font-size: 17px; font-weight: bold; }}
+#SelectBar {{ background: {BG}; }}
 QListWidget {{ background: white; border: 1px solid {LINE}; border-radius: 6px; }}
 QListWidget::item {{ padding: 5px 4px; }}
 QListWidget#Grid::item {{ padding: 0; }}

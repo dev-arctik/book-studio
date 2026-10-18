@@ -1,63 +1,68 @@
-# Education Material — Clean Book Pipeline + Book Studio
+# Book Studio
 
-Turns scanned ISKCON books (Śrīla Prabhupāda and other ācāryas) into clean, readable PDFs for the kids at the youth forum — proper Sanskrit diacritics (ṣ ṇ ṁ ā …), one consistent book design, and the original photos and drawings kept. Each book becomes **one PDF**; chapters are cut out by hand where needed.
+**Turn scanned books into clean, readable PDFs and e-books — on your own computer, with a few clicks.**
 
-> **Private material.** These PDFs are supplied internally and are not released online. Everything here runs locally — nothing is uploaded. `books/` and `output/` are kept out of git and must never be pushed to GitHub or any shared drive.
+Book Studio takes a scanned book (a PDF of page photos) and makes a fresh, cleanly set **PDF** and an **EPUB** e-book from it: real text you can search and copy, correct Sanskrit diacritics (ṣ ṇ ṁ ā ī ū ṛ …), the original photos and paintings kept, the book's own chapters with a clickable contents page, and the original cover. It also takes digital PDFs that already have text and gives them the same clean design.
 
-## Book status
+## Why it exists
 
-| Book | Author | Pages | Type | Status |
-|---|---|---|---|---|
-| Bhakti-bhāva | — | 65 / 74 | EN + HI | Translated earlier (our AI translation pipeline) — `books/final/pdf/` + `epub/` |
-| Cāru Vilāsa Vol. 2 | — | 305 / 326 | EN + HI | Translated earlier (our AI translation pipeline) — `books/final/pdf/`, also as editable Word files in `books/final/word/` |
-| Śrī Padyāvalī | Śrīla Rūpa Gosvāmī | 298 | Verse anthology | ✅ Done — `books/final/pdf/padyavali_en.pdf` |
-| Vraja-Līlā Part Two | Deena Bandhu Dāsa | 265 | Prose + photos | ✅ Done — `books/final/pdf/vraja-lila-part2_en.pdf` |
-| Tava Kathāmṛta | Śivarāma Swami | 415 | Prose: parts, endnotes, paintings | ✅ Done — `books/final/pdf/tava-kathamrita_en.pdf` |
-| Sannyāsīs in Modernity | Yadunandana Swami | 419 | Academic prose: 189 footnotes, quotations, interviews | ✅ Done — `books/final/pdf/sannyasis-in-modernity_en.pdf` |
-| Heart and Soul Connection | Grihastha Vision Team | 454 (digital) | Guide: cartoons, tables, verses — no OCR (`pdf_to_book.py`) | ✅ Done — `books/final/pdf/heart-and-soul-connection_en.pdf` + `epub/heart-and-soul-connection_en.epub` |
-| Dancing White Elephants | Giriraj Swami | 405 | Prose: Prabhupāda's letters, 13 photo plates | ✅ Done — `books/final/pdf/dancing-white-elephants_en.pdf` + `epub/dancing-white-elephants_en.epub` |
-| Śrī Dāmodara-jananī | Śivarāma Swami | 486 | Prose: 12 chapters, colour paintings, Vraja map | ✅ Done — `books/final/pdf/damodara-janani_en.pdf` + `epub/damodara-janani_en.epub` |
-| When the Sun Shines | Ranchor Prime | 510 | History in 5 Books: 46 photos, disciples list and timeline tables | ✅ Done — `books/final/pdf/when-the-sun-shines_en.pdf` + `epub/when-the-sun-shines_en.epub` |
-| I'll Build You a Temple | Giriraj Swami | 729 | The Juhu story: 5 chapters, letters, documents (photo plates not in the scan) | ✅ Done — `books/final/pdf/ill-build-you-a-temple_en.pdf` + `epub/ill-build-you-a-temple_en.epub` |
-| Saṅkalpa-kaumudī | Śivarāma Swami | 984 | 8 Parts, 40 chapters, Part paintings, verses, footnotes | ✅ Done — `books/final/pdf/sankalpa-kaumudi_en.pdf` + `epub/sankalpa-kaumudi_en.epub` |
-| Without Fear | Rūpa-vilāsa Dāsa | 594 | Glimpses of Śrīla Prabhupāda: 28 chapters, 147 photos, footnotes, captions appendix | ✅ Done — `books/final/pdf/without-fear_en.pdf` + `epub/without-fear_en.epub` |
-| A Spiritual Journey | Prapujaka Das | 78 | Memoir: 21 photos, Prabhupāda's letters, facsimiles | ✅ Done — `books/final/pdf/a-spiritual-journey_en.pdf` |
-| Book of Saṁskāras | Prema Rasa dāsa & Sāndīpani Muni dāsa | 323 | Ritual manual: mantras, footnotes | ✅ Done — `books/final/pdf/book-of-samskaras_en.pdf` |
+Many devotional books — memoirs of Śrīla Prabhupāda's disciples, Vaiṣṇava poetry, histories of the early movement — exist only as scans: heavy files of page photos, hard to read on a phone, impossible to search, and useless on a Kindle. Ordinary OCR mangles diacritics ("Krsna", "Kåñëa") and loses the book's structure.
 
-## Two parts
+Book Studio was made for an ISKCON youth forum, to give young readers these books in a form they will actually read — and so that **volunteers who aren't technical** can do the work on their own laptops. Everything runs **offline on the volunteer's computer**: the books never leave it, and no account or paid service is needed.
 
-| Folder | What it is | Status |
-|---|---|---|
-| `manual/` | The hand-run pipeline every finished book was made with: OCR → assemble → PDF + EPUB, driven from the terminal, one `book_meta.json` entry per book | In use — see `manual/README.md` |
-| `software/` | **Book Studio**, a desktop app that runs the same pipeline on volunteers' computers (Mac, Windows, Linux): one zip, installs itself, cover shelf like Calibre, cover picker, copyright toggle, cool-down and core sliders, self-update from GitHub Releases | v0.1.0 built, tested on Mac — see `software/README.md` |
-
-## Folder map
+## What it does
 
 ```
-education-material/            git repo: code and docs only
-├── manual/                    hand-run pipeline
-│   ├── README.md              how to make a book, fix report flags, make EPUB/Word copies
-│   └── pipeline/              the Python scripts, book_meta.json, book_template.typ
-├── software/                  Book Studio desktop app
-│   ├── README.md              how it works, running it from the repo, releasing an update
-│   ├── book_studio/           the app (window, worker, setup, updater)
-│   ├── launchers/ assets/ docs/   start scripts, icon + fonts, the volunteer guide
-│   └── build_zip.py           → software/dist/BookStudio-<version>.zip
-├── README.md · CLAUDE.md      this overview · rules and pitfalls for Claude Code
-├── pyproject.toml             Python packages for the manual pipeline (Poetry)
-│
-│   — not in git (book content, large tools) —
-├── books/
-│   ├── final/                 processed books only, one folder per format: pdf/ (<book>_en.pdf, _hi.pdf), epub/, word/ (.docx)
-│   └── originals/             every source scan as received (needed for rebuilds)
-├── output/<book>/             work files per book: 1-ocr/ (keep — hours of OCR), 2-assembled/ (book.json + report.txt), 3-clean-pdf/, logs/
-├── tools/                     llama-server (runs the OCR model) and the Gentium Book Plus font
-├── .venv/   (hidden)          installed Python packages
-└── .cache/  (hidden)          downloaded OCR model files, Poetry cache
+ scanned PDF  →  Read  →  Chapters  →  PDF  →  EPUB
+                 (OCR)    (from the     (A5,     (Kindle and
+                          book's own    Gentium  other
+                          contents)     font)    e-readers)
 ```
 
-Everything heavy (packages, AI model, caches) stays **inside this folder** — nothing is installed globally. To free the ~3–4 GB later, delete `.venv/`, `.cache/` and `tools/llama.cpp/`. Tip: in Finder, press `Cmd + Shift + .` to show hidden folders.
+- **Reads every page** with a local OCR model (Surya OCR via llama.cpp) that keeps diacritics, italics and bold.
+- **Finds the chapters** from the book's own contents page, and keeps verses, quotations, footnotes, tables, and photos with their captions.
+- **Sets a clean A5 PDF** in Gentium (a font made for full diacritic support), opening with the original cover — and keeps the book's copyright page unless you untick it.
+- **Makes an EPUB** with the same chapters, pictures and a clickable contents.
+- **Checks itself**: after each book, *Check book* says in plain words whether every chapter was found and which pages deserve a look, next to the scanned page.
 
-## Git
+## How to use it
 
-The repo tracks code and docs only and is published on GitHub (public), so Book Studio can update itself from GitHub Releases. `.gitignore` keeps out `books/`, `output/`, every `.pdf` / `.epub` / `.docx`, `manual/pipeline/book_meta.json` (book titles, captions and OCR-fix text fragments), the tools, the model and the environment — book content never goes to GitHub.
+### Install (once, about 10 minutes, needs internet once)
+
+1. Download **`BookStudio-<version>.zip`** from this repository's [**Releases**](../../releases) page and unzip it somewhere it can stay (e.g. Documents).
+2. Open the **BookStudio** folder and start it:
+   - **Mac:** double-click `Start Book Studio.command`. The first time, right-click it → *Open* → *Open* (it isn't signed by Apple). If it opens in a text editor, right-click → *Open With* → *Terminal*.
+   - **Windows:** double-click `Start Book Studio.bat`. If "Windows protected your PC" appears, click *More info* → *Run anyway*.
+   - **Linux:** run `sh start-book-studio.sh` in a terminal (Ubuntu may need `sudo apt install libxcb-cursor0`).
+3. Book Studio installs its own Python and parts into that folder (your computer's own Python is not used or changed), then asks for the **reading model** (1.4 GB): *Download it*, or *Load from a folder* if someone gave you a copy on a USB stick.
+4. From then on, open it from the **Book Studio** icon (Applications on Mac, Start menu on Windows).
+
+`HOW TO START.pdf` inside the zip walks through the same steps.
+
+### Make books
+
+1. **＋ Add books** — choose PDF files, or a whole folder of them. Each book gets a row.
+2. **Tick** the books to make (*Select all* ticks every one). Click a row to check the title, author and cover, or to choose your own cover picture.
+3. **▶ Make ticked books.** Each row shows where its book is — **Read → Chapters → PDF → EPUB** — with pages done and time left; the card at the top shows the whole run.
+4. **Open finished books** → *PDF folder* / *EPUB folder* (choose where they go with **Output folders…**).
+
+Reading pages is slow — a 500-page book takes several hours on a laptop. You can **Pause**, **Stop** (keeping or deleting what was done), or even close Book Studio: pages already read are kept, and *Make* continues where it stopped. By default it works 60 minutes, then **rests 15** so laptops cool down, and rests between books (change it in *Settings*).
+
+### Updates
+
+When a new version is published here, Book Studio offers **Update now** when it starts. Your books, settings and pages already read are kept.
+
+## Privacy
+
+Books are processed only on the computer running Book Studio. It goes online for three things only: installing itself, downloading the reading model, and checking for updates (which sends nothing but a request for the latest version number). This repository contains code and documentation only — no books.
+
+## For developers
+
+| Folder | What it is |
+|---|---|
+| [`software/`](software/README.md) | Book Studio: the window (PySide6), the worker that runs the pipeline per book, setup, updates, launchers, the release zip builder |
+| [`manual/`](manual/README.md) | The pipeline itself (OCR → chapters → Typst PDF → EPUB), also usable from the terminal, with per-book settings for books that need special handling |
+
+Book Studio runs `manual/pipeline` unchanged, pointed at its own data folder — one pipeline, two ways to drive it. To release a new version, see [`software/README.md`](software/README.md#releasing-an-update). Rules and pitfalls for working on the code are in `CLAUDE.md`.
+
+Built with [Surya OCR](https://github.com/datalab-to/surya) (GPL-3.0; its model has its own licence), [llama.cpp](https://github.com/ggml-org/llama.cpp), [Typst](https://typst.app), [PyMuPDF](https://pymupdf.readthedocs.io), [PySide6](https://doc.qt.io/qtforpython-6/) and the [Gentium](https://software.sil.org/gentium/) font (SIL Open Font License).

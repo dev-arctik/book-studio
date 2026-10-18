@@ -55,3 +55,30 @@ Kindle reads EPUB only through Amazon's *Send to Kindle* (which uploads the file
 ## The design
 
 A5 page, Gentium Book Plus (made for full diacritic coverage), brown accent colour, centred verse blocks, Sanskrit words in **bold** in word-for-word lists, indented paragraphs with extra line spacing for prose. The PDF opens with the book's original front cover (full-bleed, on a page shaped like the cover), then our title page, which has no copyright line. Photos from the original's front pages (dedication portrait of Śrīla Prabhupāda, Deity photos) follow the title page as frontispieces; colour paintings and photo plates stay in colour. The look lives in `manual/pipeline/book_template.typ`.
+
+## Folder map (this computer)
+
+```
+education-material/            git repo: code and docs only
+├── manual/                    hand-run pipeline
+│   ├── README.md              how to make a book, fix report flags, make EPUB/Word copies
+│   └── pipeline/              the Python scripts, book_meta.json, book_template.typ
+├── software/                  Book Studio desktop app
+│   ├── README.md              how it works, running it from the repo, releasing an update
+│   ├── book_studio/           the app (window, worker, setup, updater)
+│   ├── launchers/ assets/ docs/   start scripts, icon + fonts, the volunteer guide
+│   └── build_zip.py           → software/dist/BookStudio-<version>.zip
+├── README.md · CLAUDE.md      what Book Studio is and how to use it · rules and pitfalls for Claude Code
+├── pyproject.toml             Python packages for the manual pipeline (Poetry)
+│
+│   — not in git (book content, large tools) —
+├── books/                     STATUS.md: which books are done and where (local only)
+│   ├── final/                 processed books only, one folder per format: pdf/ (<book>_en.pdf, _hi.pdf), epub/, word/ (.docx)
+│   └── originals/             every source scan as received (needed for rebuilds)
+├── output/<book>/             work files per book: 1-ocr/ (keep — hours of OCR), 2-assembled/ (book.json + report.txt), 3-clean-pdf/, logs/
+├── tools/                     llama-server (runs the OCR model) and the Gentium Book Plus font
+├── .venv/   (hidden)          installed Python packages
+└── .cache/  (hidden)          downloaded OCR model files, Poetry cache
+```
+
+Everything heavy (packages, AI model, caches) stays **inside this folder** — nothing is installed globally. To free the ~3–4 GB later, delete `.venv/`, `.cache/` and `tools/llama.cpp/`. Tip: in Finder, press `Cmd + Shift + .` to show hidden folders.

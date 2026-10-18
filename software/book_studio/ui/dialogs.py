@@ -547,7 +547,7 @@ class CheckDialog(QDialog):
         if b.error:
             return f"<span style='color:{'#b3261e'}'>⚠️ <b>This book didn't finish.</b></span> {b.error}"
         if not self.raw:
-            return "This book hasn't been put together yet — press <b>Make books</b> first."
+            return "This book hasn't been put together yet — press <b>Make ticked books</b> first."
         if r["listed"] is None:
             return f"Book Studio found <b>{len(r['sections'])} chapters</b>. Check the list below looks like the book's contents page."
         if r["found"] >= r["listed"]:

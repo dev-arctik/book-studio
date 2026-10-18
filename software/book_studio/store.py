@@ -50,6 +50,8 @@ class Settings:
     engine: str = ""  # installed llama-server build, e.g. "macos-arm64", "win-vulkan-x64"
     skipped_version: str = ""
     expert: bool = False  # shows Book fixes; volunteers don't need it
+    details_open: bool = False  # the book details panel on the right (collapsible)
+    sec_per_page: float = 0.0  # this computer's measured reading speed, for time-left estimates before the first pages
 
     @classmethod
     def load(cls) -> "Settings":
@@ -73,6 +75,8 @@ class Book:
     subtitle: str = ""
     author: str = ""
     cover_file: str = ""  # file name inside covers/ when the user picked their own image
+    ticked: bool = True  # included when Make is pressed
+    kind: str = ""  # "scanned" or "digital", as the worker found it (decides which steps are shown)
     keep_copyright: bool = True  # keep the book's own copyright page (©, ISBN, publisher) — on by default (user asked 2026-10-18)
     fixes: dict = field(default_factory=dict)  # advanced book_meta options, plus "kind": auto / scanned / digital
     pages: int = 0

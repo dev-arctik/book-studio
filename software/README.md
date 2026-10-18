@@ -12,12 +12,13 @@ Status: **v0.1.0 built.** Tested on the M4 Mac: setup (page reader + model), rea
  BookStudio-0.1.0.zip → unzip → double-click "Start Book Studio" (.command / .bat / .sh)
    first time: uv → Python + packages into BookStudio/runtime/ (~10 min, internet)
    → window: setup dialog (page reader download, reading model download or "load from folder"), Desktop icon
- every day: Desktop icon → window → + Add books (files or a whole folder) → (title / cover / keep copyright page) → ▶ Make books
-            → Check book (chapters found, pages worth a look) → Open finished books (PDF folder / EPUB folder)
+ every day: Desktop icon → + Add books (files or a whole folder) → tick the books (Select all) → ▶ Make ticked books
+            → each row shows Read → Chapters → PDF → EPUB with pages done and time left; the run card shows the whole run
+            → ⋯ → Check book → Open finished books (PDF folder / EPUB folder)
 ```
 
 - **Output folders…** (toolbar): PDFs and EPUBs each go to a folder of their own choosing (default `~/Documents/Book Studio/PDF` and `/EPUB`).
-- **Several books at once:** ⌘/Ctrl- or Shift-click on the shelf; right-click makes, clears or removes them together.
+- **List of books** with a tick box per book (*Select all*): *Make ticked books* runs only those; *With ticked books ▾* clears or removes them together. Each row has a step tracker (Read → Chapters → PDF → EPUB; digital PDFs Text → PDF → EPUB), status, progress bar with pages and time left. The run card on top shows books done, pages done of the run and time left for the whole run (cool-down rests included; speed remembered per computer). The details panel is collapsible (◂ Show details).
 - **Stop** offers *keep progress* (continue later) or *delete progress* (start again from page 1); outside OCR it stops at once.
 - **Check book** turns the pipeline's report.txt into plain sentences beside the scanned page; the technical report is one click away.
 - **Book fixes** (the book_meta options per book) is an expert tool, hidden until Settings → Advanced → *Show expert tools*.
