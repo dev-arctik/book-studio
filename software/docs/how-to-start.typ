@@ -41,7 +41,7 @@ You need this only the first time — afterwards the Book Studio icon on the Des
 Double-click the *Book Studio* icon on your Desktop. No internet needed.
 
 #step(1)[*+ Add books* — choose the scanned PDFs (or drag them onto the window). Each book appears as its cover.]
-#step(2)[Click a book to check its *title, subtitle and author*. *Choose image…* sets your own cover photo; *Copyright line* adds one to the title page.]
+#step(2)[Click a book to check its *title, subtitle and author*. *Choose image…* sets your own cover photo; *Keep the book's copyright page* keeps the original's page with ©, ISBN and publisher.]
 #step(3)[*Make books* — Book Studio reads every page, then makes the PDF and the e-book (EPUB). A big book takes many hours; the bar at the bottom says how long is left.]
 #step(4)[*Open finished books* — the PDFs are in the *PDF* folder, the e-books in the *EPUB* folder.]
 

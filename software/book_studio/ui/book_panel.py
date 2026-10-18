@@ -1,6 +1,6 @@
 # software/book_studio/ui/book_panel.py
 # The right-hand panel for the selected book: cover (page 1 of the PDF, or an image the user picks), title, subtitle,
-# author, the copyright-line toggle, and buttons to open the finished files, see warnings and (advanced) book fixes.
+# author, whether to keep the book's own copyright page, and buttons to open the finished files, see warnings and (advanced) book fixes.
 # Every edit is saved at once; the book then shows "Changed" until it is made again.
 
 import shutil
@@ -88,13 +88,10 @@ class BookPanel(QScrollArea):
         form.addRow("Author", self.author)
         f.addLayout(form)
 
-        self.show_copyright = QCheckBox("Copyright line on the title page")
-        self.show_copyright.toggled.connect(self._edited)
-        self.copyright = QLineEdit()
-        self.copyright.setPlaceholderText("e.g. © 2015 The Bhaktivedanta Book Trust")
-        self.copyright.textEdited.connect(self._edited)
-        f.addWidget(self.show_copyright)
-        f.addWidget(self.copyright)
+        self.keep_copyright = QCheckBox("Keep the book's copyright page")
+        self.keep_copyright.setToolTip("The page with ©, ISBN and publisher from the original book, placed after the title page")
+        self.keep_copyright.toggled.connect(self._edited)
+        f.addWidget(self.keep_copyright)
 
         self.status = QLabel()
         self.status.setWordWrap(True)
@@ -147,8 +144,7 @@ class BookPanel(QScrollArea):
         self.title.setText(book.title)
         self.subtitle.setText(book.subtitle)
         self.author.setText(book.author)
-        self.show_copyright.setChecked(book.show_copyright)
-        self.copyright.setText(book.copyright)
+        self.keep_copyright.setChecked(book.keep_copyright)
         self._loading = False
         self.set_cover(pixmap)
         self.cover_note.setText("Your own image." if book.cover_file else "Page 1 of the PDF (the original cover).")
@@ -167,7 +163,6 @@ class BookPanel(QScrollArea):
         if b is None:
             return
         self.status.setText(status_html)
-        self.copyright.setEnabled(self.show_copyright.isChecked())
         self.open_pdf.setEnabled(bool(b.pdf) and Path(b.pdf).exists())
         self.open_epub.setEnabled(bool(b.epub) and Path(b.epub).exists())
         self.check.setEnabled((paths.WORK_DIR / "output" / b.id / "2-assembled" / "report.txt").exists() or bool(b.error))
@@ -179,7 +174,6 @@ class BookPanel(QScrollArea):
     def _edited(self, *_):
         if self._loading or not self.book:
             return
-        self.copyright.setEnabled(self.show_copyright.isChecked())
         self._save_timer.start()
 
     def _save(self):
@@ -187,7 +181,7 @@ class BookPanel(QScrollArea):
         if not b:
             return
         b.title, b.subtitle, b.author = self.title.text().strip(), self.subtitle.text().strip(), self.author.text().strip()
-        b.show_copyright, b.copyright = self.show_copyright.isChecked(), self.copyright.text().strip()
+        b.keep_copyright = self.keep_copyright.isChecked()
         self.changed.emit(b.id)
 
     def flush(self):

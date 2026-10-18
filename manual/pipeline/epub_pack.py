@@ -57,7 +57,8 @@ nav#toc a { color: inherit; text-decoration: none; }
 .title .name { font-size: 2.2em; font-style: italic; color: #7a4a12; }
 .title .sub { font-size: 1.1em; color: #6b6158; margin-top: 0.5em; }
 .title .author { font-size: 1.3em; margin-top: 2.5em; }
-.title .copyright { font-size: 0.75em; color: #6b6158; margin-top: 4em; }
+.copyright-page { text-align: center; font-size: 0.75em; color: #6b6158; margin-top: 40%; }
+.copyright-page p { text-indent: 0; text-align: center; margin: 0 0 0.7em; }
 """
 
 
@@ -67,11 +68,9 @@ def xhtml(title: str, body: str) -> str:
             f'<title>{html.escape(title)}</title><link rel="stylesheet" type="text/css" href="style.css"/></head>\n<body>\n{body}\n</body>\n</html>\n')
 
 
-def title_page(title: str, subtitle: str, author: str, copyright: str = "") -> str:
-    # The copyright line is opt-in (Book Studio's toggle); the approved design has none
-    extra = f'<div class="copyright">{html.escape(copyright)}</div>' if copyright else ""
+def title_page(title: str, subtitle: str, author: str) -> str:
     return xhtml(title, f'<div class="title"><div class="name">{html.escape(title)}</div>'
-                        f'<div class="sub">{html.escape(subtitle)}</div><div class="author">{html.escape(author)}</div>{extra}</div>')
+                        f'<div class="sub">{html.escape(subtitle)}</div><div class="author">{html.escape(author)}</div></div>')
 
 
 def cover_jpeg(pdf_path: Path, meta: dict | None = None) -> bytes:

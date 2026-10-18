@@ -118,7 +118,10 @@ def convert(book: str) -> None:
     try:
         data = build_typst_data(book, build_dir)  # crops every figure into build_dir, exactly as for the PDF
         meta, pictures = data["meta"], Pictures()
-        docs = [("title", meta["title"], title_page(meta["title"], meta["subtitle"], meta["author"], meta.get("copyright", "")))]
+        docs = [("title", meta["title"], title_page(meta["title"], meta["subtitle"], meta["author"]))]
+        if data.get("copyright"):  # the book's own copyright page, when its settings keep it
+            body = "\n".join("<p>" + "<br/>".join(rich(line) for line in blk) + "</p>" for blk in data["copyright"])
+            docs.append(("copyright", "Copyright", xhtml(meta["title"], f'<div class="copyright-page">{body}</div>')))
         if data["frontispiece"]:
             docs.append(("frontispiece", "Frontispiece", xhtml(meta["title"], "\n".join(figure_html(f, pictures) for f in data["frontispiece"]))))
         for i, sec in enumerate(data["front"], 1):

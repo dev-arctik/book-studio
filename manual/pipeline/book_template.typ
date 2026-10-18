@@ -189,9 +189,17 @@
     #text(size: 15pt, meta.author)
     #v(1fr)
     #for c in meta.credits [#text(size: 10pt, fill: soft, c) \ ]
-    // Opt-in copyright line (Book Studio's toggle); the approved design has none, so finished books are unchanged
-    #if meta.at("copyright", default: "") != "" [#v(0.5em) #text(size: 8.5pt, fill: soft, meta.copyright)]
   ]
+
+  // The book's own copyright page, as printed — only when its settings keep it (the approved design leaves it out)
+  if data.at("copyright", default: none) != none {
+    pagebreak()
+    v(1fr)
+    set par(justify: false, leading: 0.5em)
+    align(center, text(size: 8pt, fill: soft, {
+      for blk in data.copyright { block(below: 0.7em, blk.map(l => rich(l)).join(linebreak())) }
+    }))
+  }
 
   // Frontispiece: the original's dedication portrait or Deity photos from its front pages, each on its own page
   for fig in data.at("frontispiece", default: ()) {

@@ -16,7 +16,7 @@ import pypdfium2 as pdfium
 import typst
 
 from figures import book_cover, crop_figure, has_ink
-from ocr_text import PICTURE_LABELS, ocr_pages
+from ocr_text import PICTURE_LABELS, clean_inline, ocr_pages
 
 TEMPLATE = local_env.PIPELINE_DIR / "book_template.typ"
 META_FILE = local_env.META_FILE
@@ -170,6 +170,33 @@ def first_text_page(book: str, assembled: dict) -> int:
     return first
 
 
+# Signs of a copyright page: two or more are needed — one "published by" in a preface is not a copyright page
+COPYRIGHT_RE = re.compile(r"©|copyright|all rights reserved|\bisbn\b|printed in|published by", re.I)
+
+
+def copyright_page(book: str, first_page: int) -> list[list[list[dict]]] | None:
+    """The book's own copyright page (©, ISBN, publisher) from its front pages, as blocks of lines, set faithfully as printed.
+    Only used when the book's settings say "keep_copyright" — the approved design leaves it out. Scans read the OCR text;
+    digital PDFs (no OCR pages) read the PDF's own text."""
+    pages = [(n, [clean_inline(b["html"]) for b in blocks if b["label"] not in PICTURE_LABELS and b.get("html")])
+             for n, blocks in ocr_pages(book) if n < first_page]
+    if not pages:
+        import pymupdf
+        with pymupdf.open(local_env.find_book(book)) as pdf:
+            pages = [(n + 1, [b[4].strip() for b in pdf[n].get_text("blocks") if b[6] == 0 and b[4].strip()])
+                     for n in range(min(first_page - 1, len(pdf)))]
+    best, best_hits = None, 1
+    for n, texts in pages:
+        hits = len(COPYRIGHT_RE.findall(" ".join(texts)))
+        if hits > best_hits:
+            best, best_hits = (n, texts), hits
+    if best is None:
+        print("Copyright page: none found in the front pages — the PDF goes without one")
+        return None
+    print(f"Copyright page: page {best[0]} (check it against the scan)")
+    return [[to_segments(line) for line in text.split("\n") if line.strip()] for text in best[1]]
+
+
 def build_typst_data(book: str, build_dir: Path) -> dict:
     assembled = json.loads((local_env.stage_dir(book, "assembled") / "book.json").read_text(encoding="utf-8"))
     meta = json.loads(META_FILE.read_text(encoding="utf-8"))[book]
@@ -181,7 +208,9 @@ def build_typst_data(book: str, build_dir: Path) -> dict:
     cover_data = {"path": "/" + str(cover_path.relative_to(local_env.PROJECT_ROOT)), "aspect": cover.height / cover.width}
     frontispiece = front_figures(book, first_text_page(book, assembled), figures, set(meta.get("frontispiece_skip", [])))
     front, chapters = (from_prose_book if meta["layout"] == "prose" else from_verses_book)(assembled, figures)
-    return {"meta": meta, "layout": meta["layout"], "cover": cover_data, "frontispiece": frontispiece, "front": front, "chapters": chapters}
+    copyright_lines = copyright_page(book, first_text_page(book, assembled)) if meta.get("keep_copyright") else None
+    return {"meta": meta, "layout": meta["layout"], "cover": cover_data, "copyright": copyright_lines, "frontispiece": frontispiece,
+            "front": front, "chapters": chapters}
 
 
 def render(book: str, output: Path) -> None:

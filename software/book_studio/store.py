@@ -1,6 +1,6 @@
 # software/book_studio/store.py
 # Book Studio's saved state: app settings (folders, cool-down, cores) and the library of books with what the user edited
-# (title, cover, copyright, book fixes). Turns each book into the book_meta.json entry the pipeline reads.
+# (title, cover, keep the copyright page, book fixes). Turns each book into the book_meta.json entry the pipeline reads.
 
 import hashlib
 import json
@@ -73,8 +73,7 @@ class Book:
     subtitle: str = ""
     author: str = ""
     cover_file: str = ""  # file name inside covers/ when the user picked their own image
-    show_copyright: bool = False
-    copyright: str = ""
+    keep_copyright: bool = False  # keep the book's own copyright page (©, ISBN, publisher) — off in the approved design
     fixes: dict = field(default_factory=dict)  # advanced book_meta options, plus "kind": auto / scanned / digital
     pages: int = 0
     added: str = ""
@@ -94,7 +93,7 @@ def builtin_meta() -> dict:
 
 
 def meta_for(book: Book, builtin: dict) -> dict:
-    """The book_meta.json entry for one book: built-in settings, then the user's fixes, title, cover and copyright on top."""
+    """The book_meta.json entry for one book: built-in settings, then the user's fixes, title, cover and copyright choice on top."""
     meta = dict(builtin.get(book.id) or {"layout": "prose", "credits": []})
     meta.update({k: v for k, v in book.fixes.items() if k != "kind"})
     # The cover is only ever the picture the volunteer chose here: a cover_file in imported settings or fixes could point at
@@ -105,8 +104,8 @@ def meta_for(book: Book, builtin: dict) -> dict:
     meta.setdefault("layout", "prose")
     if book.cover_file:
         meta["cover_file"] = str(paths.COVERS_DIR / book.cover_file)
-    if book.show_copyright and book.copyright.strip():
-        meta["copyright"] = book.copyright.strip()
+    if book.keep_copyright:
+        meta["keep_copyright"] = True
     return meta
 
 

@@ -12,7 +12,7 @@ Status: **v0.1.0 built.** Tested on the M4 Mac: setup (page reader + model), rea
  BookStudio-0.1.0.zip → unzip → double-click "Start Book Studio" (.command / .bat / .sh)
    first time: uv → Python + packages into BookStudio/runtime/ (~10 min, internet)
    → window: setup dialog (page reader download, reading model download or "load from folder"), Desktop icon
- every day: Desktop icon → window → + Add books (files or a whole folder) → (title / cover / copyright) → ▶ Make books
+ every day: Desktop icon → window → + Add books (files or a whole folder) → (title / cover / keep copyright page) → ▶ Make books
             → Check book (chapters found, pages worth a look) → Open finished books (PDF folder / EPUB folder)
 ```
 
