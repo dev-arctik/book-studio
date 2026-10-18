@@ -73,7 +73,7 @@ class Book:
     subtitle: str = ""
     author: str = ""
     cover_file: str = ""  # file name inside covers/ when the user picked their own image
-    keep_copyright: bool = False  # keep the book's own copyright page (©, ISBN, publisher) — off in the approved design
+    keep_copyright: bool = True  # keep the book's own copyright page (©, ISBN, publisher) — on by default (user asked 2026-10-18)
     fixes: dict = field(default_factory=dict)  # advanced book_meta options, plus "kind": auto / scanned / digital
     pages: int = 0
     added: str = ""
