@@ -18,7 +18,7 @@ from ..store import Book
 class BookPanel(QScrollArea):
     changed = Signal(str)  # book id — saved; grid and status need a refresh
     coverChanged = Signal(str)
-    showWarnings = Signal(str)
+    showCheck = Signal(str)
     showFixes = Signal(str)
     makeThis = Signal(str)
 
@@ -116,13 +116,15 @@ class BookPanel(QScrollArea):
         f.addLayout(files)
 
         extra = QHBoxLayout()
-        self.warnings = QPushButton("Warnings")
-        self.warnings.clicked.connect(lambda: self.showWarnings.emit(self.book.id))
+        self.check = QPushButton("Check book")
+        self.check.setToolTip("Did everything come out? Chapters found and pages worth a look, beside the scan")
+        self.check.clicked.connect(lambda: self.showCheck.emit(self.book.id))
         self.fixes = QPushButton("Book fixes…")
         self.fixes.setToolTip("Advanced: settings for books with an unusual layout")
         self.fixes.clicked.connect(lambda: self.showFixes.emit(self.book.id))
-        extra.addWidget(self.warnings)
+        extra.addWidget(self.check)
         extra.addWidget(self.fixes)
+        self.fixes.hide()  # expert tool: shown only when Settings → Advanced → Show expert tools is on
         f.addLayout(extra)
 
         self.source = QLabel()
@@ -168,12 +170,9 @@ class BookPanel(QScrollArea):
         self.copyright.setEnabled(self.show_copyright.isChecked())
         self.open_pdf.setEnabled(bool(b.pdf) and Path(b.pdf).exists())
         self.open_epub.setEnabled(bool(b.epub) and Path(b.epub).exists())
-        self.warnings.setEnabled((paths.WORK_DIR / "output" / b.id / "2-assembled" / "report.txt").exists() or bool(b.error))
+        self.check.setEnabled((paths.WORK_DIR / "output" / b.id / "2-assembled" / "report.txt").exists() or bool(b.error))
+        # Details stay editable while the book is being made: changes apply the next time it is made, which takes seconds
         self.make_btn.setEnabled(not busy)
-        for w in (self.pick_cover, self.page1_cover, self.title, self.subtitle, self.author, self.show_copyright, self.copyright, self.fixes):
-            w.setEnabled(not busy)
-        if not busy:
-            self.copyright.setEnabled(self.show_copyright.isChecked())
 
     # ---------- edits ----------
 

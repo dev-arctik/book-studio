@@ -2,7 +2,7 @@
 # The window's look: the books' own brown accent and Gentium for book titles, on a calm light background,
 # with large click targets for people who don't use computers much.
 
-from PySide6.QtGui import QFontDatabase
+from PySide6.QtGui import QColor, QFontDatabase, QPalette
 
 from .. import paths
 
@@ -39,15 +39,43 @@ QPushButton#Link {{ border: none; color: {ACCENT}; padding: 4px; text-decoration
 QLineEdit, QPlainTextEdit, QSpinBox, QComboBox {{ background: white; border: 1px solid {LINE}; border-radius: 6px; padding: 6px; }}
 QLineEdit:focus, QPlainTextEdit:focus, QSpinBox:focus, QComboBox:focus {{ border-color: {ACCENT}; }}
 QListWidget#Grid {{ background: {BG}; border: none; }}
+QListWidget {{ background: white; border: 1px solid {LINE}; border-radius: 6px; }}
+QListWidget::item {{ padding: 5px 4px; }}
+QListWidget#Grid::item {{ padding: 0; }}
 QProgressBar {{ border: 1px solid {LINE}; border-radius: 6px; background: white; height: 14px; text-align: center; }}
 QProgressBar::chunk {{ background: {ACCENT}; border-radius: 5px; }}
 QSlider::groove:horizontal {{ height: 6px; background: {LINE}; border-radius: 3px; }}
 QSlider::handle:horizontal {{ background: {ACCENT}; width: 18px; margin: -7px 0; border-radius: 9px; }}
 QSlider::sub-page:horizontal {{ background: {ACCENT}; border-radius: 3px; }}
-QCheckBox::indicator {{ width: 18px; height: 18px; }}
+QCheckBox {{ spacing: 8px; }}
+QCheckBox::indicator {{ width: 18px; height: 18px; border: 2px solid #a89a8a; border-radius: 4px; background: white; }}
+QCheckBox::indicator:hover {{ border-color: {ACCENT}; }}
+QCheckBox::indicator:checked {{ background: {ACCENT}; border-color: {ACCENT}; image: url(CHECK_PNG); }}
+QCheckBox::indicator:disabled {{ background: #f1ece5; border-color: #d6ccc0; }}
+QCheckBox::indicator:checked:disabled {{ background: #c9b39a; border-color: #c9b39a; }}
 QGroupBox {{ border: 1px solid {LINE}; border-radius: 8px; margin-top: 14px; padding: 12px 10px 10px; background: {PANEL}; }}
 QGroupBox::title {{ subcontrol-origin: margin; left: 10px; padding: 0 4px; color: {ACCENT}; font-weight: bold; }}
 """
+
+
+def qss() -> str:
+    """The style sheet, with the tick picture's path filled in (Qt style sheets need a file path, with forward slashes)."""
+    return QSS.replace("CHECK_PNG", (paths.ASSETS_DIR / "check.png").as_posix())
+
+
+def palette() -> QPalette:
+    """Light colours whatever the system theme: in Mac/Windows dark mode Qt would otherwise draw black boxes and scrollbars
+    inside this light design (a ticked checkbox looked the same as an empty one)."""
+    p = QPalette()
+    for role, colour in ((QPalette.Window, BG), (QPalette.WindowText, TEXT), (QPalette.Base, "#ffffff"), (QPalette.AlternateBase, BG),
+                         (QPalette.Text, TEXT), (QPalette.Button, PANEL), (QPalette.ButtonText, TEXT), (QPalette.ToolTipBase, PANEL),
+                         (QPalette.ToolTipText, TEXT), (QPalette.Highlight, ACCENT), (QPalette.HighlightedText, "#ffffff"),
+                         (QPalette.PlaceholderText, MUTED), (QPalette.Light, "#ffffff"), (QPalette.Midlight, LINE),
+                         (QPalette.Mid, "#c9bfb2"), (QPalette.Dark, "#a89a8a"), (QPalette.Shadow, "#8a7f74")):
+        p.setColor(role, QColor(colour))
+    for role in (QPalette.WindowText, QPalette.Text, QPalette.ButtonText):
+        p.setColor(QPalette.Disabled, role, QColor("#b5aca2"))
+    return p
 
 
 def load_fonts() -> str:

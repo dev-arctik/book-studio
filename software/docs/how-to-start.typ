@@ -49,7 +49,7 @@ Double-click the *Book Studio* icon on your Desktop. No internet needed.
 
 == If something goes wrong
 
-- A book shows *Needs attention*: click it → *Warnings*. It shows what Book Studio found next to the scanned page. Send that book to Devansh if it isn't clear.
+- After a book is made, click *Check book*: it says whether every chapter was found and lists pages worth a look, beside the scanned page. A book showing *Needs attention* explains what went wrong there too — send that book to Devansh if it isn't clear.
 - *Changed* means you edited the book after it was made — click *Make books* again; it takes seconds.
 - *Updates* come by themselves: when Book Studio offers one, click *Update now*. Your books and settings are kept.
 

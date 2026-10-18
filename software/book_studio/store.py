@@ -39,6 +39,8 @@ def _from_dict(cls, data: dict):
 @dataclass
 class Settings:
     output_dir: str = str(Path.home() / "Documents" / "Book Studio")
+    pdf_dir: str = ""  # where finished PDFs go; empty = <output_dir>/PDF
+    epub_dir: str = ""  # where finished EPUBs go; empty = <output_dir>/EPUB
     cooldown: bool = True
     work_minutes: int = 60
     rest_minutes: int = 15
@@ -47,10 +49,17 @@ class Settings:
     slots: int = 4  # parallel OCR slots: each holds its own memory (≈1.7 GB in all at 4 on the M4)
     engine: str = ""  # installed llama-server build, e.g. "macos-arm64", "win-vulkan-x64"
     skipped_version: str = ""
+    expert: bool = False  # shows Book fixes; volunteers don't need it
 
     @classmethod
     def load(cls) -> "Settings":
         return _from_dict(cls, _read_json(paths.SETTINGS_FILE, {}))
+
+    def pdf_folder(self) -> Path:
+        return Path(self.pdf_dir or Path(self.output_dir) / "PDF")
+
+    def epub_folder(self) -> Path:
+        return Path(self.epub_dir or Path(self.output_dir) / "EPUB")
 
     def save(self) -> None:
         write_json(paths.SETTINGS_FILE, asdict(self))

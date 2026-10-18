@@ -22,7 +22,7 @@ from .. import APP_NAME, engine, paths, store, updater
 from . import style
 from .book_panel import BookPanel
 from .cover_grid import CoverGrid
-from .dialogs import FixesDialog, SettingsDialog, SetupDialog, Task, WarningsDialog, offer_update
+from .dialogs import CheckDialog, FixesDialog, OutputDialog, SettingsDialog, SetupDialog, Task, offer_update
 
 STAGE_TEXT = {
     "starting": "Starting the page reader (this can take a minute)…",
@@ -91,6 +91,8 @@ class MainWindow(QMainWindow):
         self.stop_requested = False
         self.last_event = ""
         self.did_read_pages = False
+        self.delete_after_stop: str | None = None  # book whose progress to throw away once it has stopped
+        self.current_hash = ""  # the book's settings when it started — edits made while it runs show as 'Changed' afterwards
         self.thumbs: dict[str, QPixmap] = {}
 
         self.setWindowTitle(APP_NAME)
@@ -112,7 +114,8 @@ class MainWindow(QMainWindow):
         self.panel = BookPanel()
         self.panel.changed.connect(self._book_edited)
         self.panel.coverChanged.connect(self._cover_changed)
-        self.panel.showWarnings.connect(self.show_warnings)
+        self.panel.showCheck.connect(self.show_check)
+        self.panel.fixes.setVisible(self.settings.expert)
         self.panel.showFixes.connect(self.show_fixes)
         self.panel.makeThis.connect(lambda bid: self.make_books([bid]))
         split.addWidget(self.grid)
@@ -137,21 +140,31 @@ class MainWindow(QMainWindow):
         bar.setObjectName("Toolbar")
         h = QHBoxLayout(bar)
         h.setContentsMargins(10, 6, 10, 6)
-        self.add_btn = self._tool("＋  Add books", self.choose_files)
+        self.add_btn = self._tool("＋  Add books")
+        add_menu = QMenu(self)
+        add_menu.addAction("PDF files…  (select one or several)", self.choose_files)
+        add_menu.addAction("A whole folder of PDFs…", self.choose_folder)
+        self.add_btn.setMenu(add_menu)
         self.make_btn = self._tool("▶  Make books", lambda: self.make_books())
         self.make_btn.setObjectName("Primary")
-        self.open_btn = self._tool("Open finished books", self.open_output)
+        self.open_btn = self._tool("Open finished books")
+        open_menu = QMenu(self)
+        open_menu.addAction("PDF folder", lambda: self.open_folder(self.settings.pdf_folder()))
+        open_menu.addAction("EPUB folder", lambda: self.open_folder(self.settings.epub_folder()))
+        self.open_btn.setMenu(open_menu)
+        self.folders_btn = self._tool("Output folders…", self.show_output_folders)
         self.settings_btn = self._tool("Settings", self.show_settings)
-        for b in (self.add_btn, self.make_btn, self.open_btn):
+        for b in (self.add_btn, self.make_btn, self.open_btn, self.folders_btn):
             h.addWidget(b)
         h.addStretch()
         h.addWidget(self.settings_btn)
         return bar
 
-    def _tool(self, text, slot) -> QPushButton:
+    def _tool(self, text, slot=None) -> QPushButton:
         b = QPushButton(text)
         b.setObjectName("Tool")
-        b.clicked.connect(slot)
+        if slot:  # buttons with a menu open it instead
+            b.clicked.connect(slot)
         return b
 
     def _statusbar(self) -> QWidget:
@@ -206,7 +219,29 @@ class MainWindow(QMainWindow):
         if files:
             self.add_files(files)
 
-    def add_files(self, files: list[str]):
+    def choose_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, "Add every PDF in a folder", str(Path.home()))
+        if folder:
+            self.add_files([folder])
+
+    def _expand(self, items: list[str]) -> list[str]:
+        """Files as given; folders → every PDF inside them (subfolders too), except Book Studio's own finished books."""
+        ours = {self.settings.pdf_folder().resolve(), self.settings.epub_folder().resolve()}
+        files = []
+        for item in items:
+            path = Path(item)
+            if path.is_dir():
+                files += sorted(str(f) for f in path.rglob("*") if f.suffix.lower() == ".pdf" and f.is_file()
+                                and not any(f.resolve().is_relative_to(o) for o in ours))
+            elif path.suffix.lower() == ".pdf":
+                files.append(item)
+        return files
+
+    def add_files(self, items: list[str]):
+        files = self._expand(items)
+        if not files:
+            QMessageBox.information(self, "No PDFs", "No PDF files were found there.")
+            return
         QApplication.setOverrideCursor(Qt.WaitCursor)
         added, skipped = [], 0
         try:
@@ -322,35 +357,49 @@ class MainWindow(QMainWindow):
         item = self.grid.itemAt(pos)
         if not item:
             return
-        self.grid.setCurrentItem(item)
-        b = self.library.get(self.grid.selected_id())
-        busy = b.id == self.current or b.id in self.queue
+        if not item.isSelected():
+            self.grid.setCurrentItem(item)
+        books = [self.library.get(i) for i in self.grid.selected_ids()]
+        busy = any(b.id == self.current or b.id in self.queue for b in books)
         menu = QMenu(self)
+        if len(books) > 1:  # several selected (⌘/Ctrl-click or Shift-click)
+            menu.addAction(f"Make these {len(books)} books", lambda: self.make_books([b.id for b in books])).setEnabled(not busy)
+            menu.addSeparator()
+            menu.addAction(f"Clear working files of {len(books)} books", lambda: self.clear_work(*books)).setEnabled(not busy)
+            menu.addAction(f"Remove {len(books)} books from Book Studio", lambda: self.remove_book(*books)).setEnabled(not busy)
+            menu.exec(self.grid.viewport().mapToGlobal(pos))
+            return
+        b = books[0]
         menu.addAction("Make this book now", lambda: self.make_books([b.id])).setEnabled(not busy)
         menu.addSeparator()
         menu.addAction("Open PDF", lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(b.pdf))).setEnabled(Path(b.pdf).exists() if b.pdf else False)
         menu.addAction("Open EPUB", lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(b.epub))).setEnabled(Path(b.epub).exists() if b.epub else False)
-        menu.addAction("Warnings", lambda: self.show_warnings(b.id))
-        menu.addAction("Book fixes…", lambda: self.show_fixes(b.id)).setEnabled(not busy)
+        menu.addAction("Check book", lambda: self.show_check(b.id))
+        if self.settings.expert:
+            menu.addAction("Book fixes…", lambda: self.show_fixes(b.id)).setEnabled(not busy)
         menu.addSeparator()
         menu.addAction("Clear working files (free disk space)", lambda: self.clear_work(b)).setEnabled(not busy)
         menu.addAction("Remove from Book Studio", lambda: self.remove_book(b)).setEnabled(not busy)
         menu.exec(self.grid.viewport().mapToGlobal(pos))
 
-    def clear_work(self, b: store.Book):
-        done = store.ocr_pages_done(b)
+    def clear_work(self, *books: store.Book):
+        pages = sum(store.ocr_pages_done(b) for b in books)
+        what = f"“{books[0].title}”" if len(books) == 1 else f"{len(books)} books"
         if QMessageBox.question(self, "Clear working files",
-                                f"Delete the {done} pages already read for “{b.title}”?\n\nThe finished PDF and EPUB stay where they are, "
-                                "but changing this book later would mean reading all its pages again.") == QMessageBox.Yes:
-            store.clear_work(b)
+                                f"Delete the {pages} pages already read for {what}?\n\nFinished PDFs and EPUBs stay where they are, "
+                                "but changing these books later would mean reading all their pages again.") == QMessageBox.Yes:
+            for b in books:
+                store.clear_work(b)
             self._refresh_all()
 
-    def remove_book(self, b: store.Book):
-        if QMessageBox.question(self, "Remove book",
-                                f"Remove “{b.title}” from Book Studio?\n\nYour original PDF and the finished PDF/EPUB are not deleted.") == QMessageBox.Yes:
-            self.library.remove(b)
-            self.grid.takeItem(self.grid.row(self.grid.item_for(b.id)))
-            self.thumbs.pop(b.id, None)
+    def remove_book(self, *books: store.Book):
+        what = f"“{books[0].title}”" if len(books) == 1 else f"these {len(books)} books"
+        if QMessageBox.question(self, "Remove", f"Remove {what} from Book Studio?\n\n"
+                                "Your original PDFs and the finished PDFs/EPUBs are not deleted.") == QMessageBox.Yes:
+            for b in books:
+                self.library.remove(b)
+                self.grid.takeItem(self.grid.row(self.grid.item_for(b.id)))
+                self.thumbs.pop(b.id, None)
             self._selection_changed()
             self._refresh_status()
 
@@ -362,6 +411,7 @@ class MainWindow(QMainWindow):
         dlg.checkUpdates.connect(lambda: self.check_updates(quiet=False))
         if dlg.exec():
             self.library.write_meta()  # imported book settings may change books
+            self.panel.fixes.setVisible(self.settings.expert)
             self._refresh_all()
 
     def redo_setup(self):
@@ -372,8 +422,8 @@ class MainWindow(QMainWindow):
         shutil.rmtree(paths.WORK_DIR / "tools" / "llama.cpp", ignore_errors=True)
         SetupDialog(self.settings, self).exec()
 
-    def show_warnings(self, book_id: str):
-        WarningsDialog(self.library.get(book_id), self).exec()
+    def show_check(self, book_id: str):
+        CheckDialog(self.library.get(book_id), self).exec()
 
     def show_fixes(self, book_id: str):
         b = self.library.get(book_id)
@@ -381,10 +431,12 @@ class MainWindow(QMainWindow):
             self.library.save()
             self._refresh_all()
 
-    def open_output(self):
-        folder = Path(self.settings.output_dir)
+    def open_folder(self, folder: Path):
         folder.mkdir(parents=True, exist_ok=True)
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+
+    def show_output_folders(self):
+        OutputDialog(self.settings, self).exec()
 
     # ---------- making books ----------
 
@@ -418,6 +470,7 @@ class MainWindow(QMainWindow):
             return self.start_next()
         b.error = ""
         self.library.save()
+        self.current_hash = store.fingerprint(b, store.builtin_meta())
         store.write_json(paths.CONTROL_FILE, {})
         self.current, self.phase, self.progress_info, self.last_event = book_id, "starting", {}, ""
         self.did_read_pages = False
@@ -456,7 +509,7 @@ class MainWindow(QMainWindow):
             self.phase, self.rest_until = "ocr", 0.0
         elif kind == "done":
             b.built = datetime.now().isoformat(timespec="seconds")
-            b.built_hash = store.fingerprint(b, store.builtin_meta())
+            b.built_hash = self.current_hash
             b.pdf, b.epub, b.error = ev["pdf"], ev["epub"], ""
             self.library.save()
         elif kind == "error":
@@ -468,12 +521,17 @@ class MainWindow(QMainWindow):
 
     def _on_ended(self, code: int, tail: str):
         b = self.library.get(self.current) if self.current else None
-        if b and self.last_event not in ("done", "error", "stopped"):
+        if b and self.last_event not in ("done", "error", "stopped") and not self.stop_requested:
             b.error = "Book Studio stopped working on this book unexpectedly. Make books continues where it stopped."
             if tail:
                 (paths.LOGS_DIR / f"{b.id}.log").open("a", encoding="utf-8").write(tail + "\n")
             self.library.save()
             engine.stop_stray_server()
+        if b and self.delete_after_stop == b.id:
+            store.clear_work(b)
+            b.error = ""
+            self.library.save()
+        self.delete_after_stop = None
         self.runner = None
         finished = self.current
         self.current, self.phase, self.rest_until = None, "", 0.0
@@ -520,12 +578,31 @@ class MainWindow(QMainWindow):
             self.queue.clear()
             self._refresh_all()
             return
-        if QMessageBox.question(self, "Stop", "Stop after the pages being read now?\n\nNothing is lost: pages already read are kept, "
-                                "and Make books continues from there.") != QMessageBox.Yes:
+        b = self.library.get(self.current)
+        box = QMessageBox(self)
+        box.setWindowTitle("Stop")
+        box.setText(f"Stop making “{b.title}”?")
+        box.setInformativeText("Keep progress: the pages already read are kept, and Make books continues from there.\n\n"
+                               "Delete progress: everything done on this book so far is thrown away; next time it starts from page 1. "
+                               "Finished PDFs and EPUBs are not touched.")
+        keep = box.addButton("Stop, keep progress", QMessageBox.AcceptRole)
+        delete = box.addButton("Stop, delete progress", QMessageBox.DestructiveRole)
+        box.addButton("Keep going", QMessageBox.RejectRole)
+        box.setDefaultButton(keep)
+        box.exec()
+        if box.clickedButton() not in (keep, delete):
             return
         self.stop_requested = True
-        store.write_json(paths.CONTROL_FILE, {"stop": True})
-        self.status_text.setText("Stopping after the pages being read now…")
+        self.delete_after_stop = b.id if box.clickedButton() is delete else None
+        if self.phase in ("ocr", "rest", "paused"):
+            # Between page batches the OCR engine shuts down cleanly; a batch takes a few minutes at most
+            store.write_json(paths.CONTROL_FILE, {"stop": True})
+            self.status_text.setText("Stopping after the pages being read now…")
+        else:
+            # Starting up, reading a digital PDF, or making the PDF/EPUB: nothing to save half-way, so stop at once
+            self.runner.kill()
+            engine.stop_stray_server()
+            self.status_text.setText("Stopping…")
 
     def _refresh_status(self):
         busy = self.runner is not None or bool(self.between_until)

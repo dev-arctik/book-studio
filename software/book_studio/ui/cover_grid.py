@@ -80,7 +80,7 @@ class CoverGrid(QListWidget):
         self.setMovement(QListView.Static)
         self.setUniformItemSizes(True)
         self.setSpacing(8)
-        self.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.setSelectionMode(QAbstractItemView.ExtendedSelection)  # ⌘/Ctrl-click or Shift-click selects several books
         self.setItemDelegate(TileDelegate(title_family, self))
         self.setAcceptDrops(True)
         self.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -100,10 +100,17 @@ class CoverGrid(QListWidget):
         return next((self.item(i) for i in range(self.count()) if self.item(i).data(ROLE_ID) == book_id), None)
 
     def selected_id(self) -> str | None:
+        """The book shown in the panel: the one last clicked, if it is selected."""
+        item = self.currentItem()
+        if item is not None and item.isSelected():
+            return item.data(ROLE_ID)
         items = self.selectedItems()
         return items[0].data(ROLE_ID) if items else None
 
-    # Drag PDFs from Finder / Explorer onto the shelf
+    def selected_ids(self) -> list[str]:
+        return [self.item(i).data(ROLE_ID) for i in range(self.count()) if self.item(i).isSelected()]
+
+    # Drag PDFs or whole folders from Finder / Explorer onto the shelf
     def dragEnterEvent(self, e):
         if e.mimeData().hasUrls():
             e.acceptProposedAction()
@@ -113,7 +120,7 @@ class CoverGrid(QListWidget):
             e.acceptProposedAction()
 
     def dropEvent(self, e):
-        files = [u.toLocalFile() for u in e.mimeData().urls() if u.toLocalFile().lower().endswith(".pdf")]
+        files = [u.toLocalFile() for u in e.mimeData().urls() if u.isLocalFile()]  # the window keeps the PDFs, looking inside folders
         if files:
             self.filesDropped.emit(files)
         e.acceptProposedAction()
@@ -127,4 +134,4 @@ class CoverGrid(QListWidget):
             f.setPointSize(15)
             p.setFont(f)
             p.drawText(self.viewport().rect(), Qt.AlignCenter,
-                       "No books yet.\n\nClick  “＋ Add books”  above,\nor drag PDF files here.")
+                       "No books yet.\n\nClick  “＋ Add books”  above,\nor drag PDF files or a folder here.")

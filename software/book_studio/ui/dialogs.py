@@ -167,6 +167,69 @@ class SetupDialog(QDialog):
         super().reject()
 
 
+# ---------- output folders ----------
+
+class FolderRow(QWidget):
+    """A folder path with a Change… button (PDF folder, EPUB folder)."""
+
+    def __init__(self, path: Path, title: str):
+        super().__init__()
+        self.title = title
+        h = QHBoxLayout(self)
+        h.setContentsMargins(0, 0, 0, 0)
+        self.edit = QLineEdit(str(path))
+        change = QPushButton("Change…")
+        change.clicked.connect(self._browse)
+        h.addWidget(self.edit, 1)
+        h.addWidget(change)
+
+    def _browse(self):
+        folder = QFileDialog.getExistingDirectory(self, self.title, self.edit.text())
+        if folder:
+            self.edit.setText(folder)
+
+    def value(self) -> str:
+        return self.edit.text().strip()
+
+
+def output_rows(settings: store.Settings) -> tuple[QGroupBox, FolderRow, FolderRow]:
+    box = QGroupBox("Finished books go to")
+    form = QFormLayout(box)
+    pdf = FolderRow(settings.pdf_folder(), "Where should finished PDFs go?")
+    epub = FolderRow(settings.epub_folder(), "Where should finished EPUBs (e-books) go?")
+    form.addRow("PDFs", pdf)
+    form.addRow("EPUBs", epub)
+    return box, pdf, epub
+
+
+def save_output_rows(settings: store.Settings, pdf: FolderRow, epub: FolderRow) -> None:
+    settings.pdf_dir = pdf.value() or settings.pdf_dir
+    settings.epub_dir = epub.value() or settings.epub_dir
+
+
+class OutputDialog(QDialog):
+    """Toolbar → Output folders: where finished PDFs and EPUBs go (each its own folder)."""
+
+    def __init__(self, settings: store.Settings, parent=None):
+        super().__init__(parent)
+        self.settings = settings
+        self.setWindowTitle("Output folders")
+        self.setMinimumWidth(620)
+        lay = QVBoxLayout(self)
+        box, self.pdf, self.epub = output_rows(settings)
+        lay.addWidget(box)
+        lay.addWidget(_hint("Books made from now on go here. Books already made stay where they are."))
+        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self._save)
+        buttons.rejected.connect(self.reject)
+        lay.addWidget(buttons)
+
+    def _save(self):
+        save_output_rows(self.settings, self.pdf, self.epub)
+        self.settings.save()
+        self.accept()
+
+
 # ---------- settings ----------
 
 class SettingsDialog(QDialog):
@@ -185,13 +248,7 @@ class SettingsDialog(QDialog):
         lay = QVBoxLayout(general)
         tabs.addTab(general, "General")
 
-        out = QGroupBox("Finished books go to")
-        o = QHBoxLayout(out)
-        self.output = QLineEdit(settings.output_dir)
-        browse = QPushButton("Change…")
-        browse.clicked.connect(self._browse)
-        o.addWidget(self.output, 1)
-        o.addWidget(browse)
+        out, self.pdf_row, self.epub_row = output_rows(settings)
         lay.addWidget(out)
 
         cool = QGroupBox("Cool-down")
@@ -248,6 +305,9 @@ class SettingsDialog(QDialog):
         upd.clicked.connect(lambda: (self.accept(), self.checkUpdates.emit()))
         data = QPushButton("Open data folder")
         data.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(paths.DATA_DIR))))
+        self.expert = QCheckBox("Show expert tools (Book fixes — for books that need special handling)")
+        self.expert.setChecked(settings.expert)
+        t.addRow(self.expert)
         t.addRow(self._row(redo, imp))
         t.addRow(self._row(upd, data))
         adv.addWidget(tools)
@@ -276,11 +336,6 @@ class SettingsDialog(QDialog):
             h.addWidget(x)
         return w
 
-    def _browse(self):
-        folder = QFileDialog.getExistingDirectory(self, "Where should finished books go?", self.output.text())
-        if folder:
-            self.output.setText(folder)
-
     def _import_meta(self):
         file, _ = QFileDialog.getOpenFileName(self, "Book settings file", str(Path.home()), "Book settings (*.json)")
         if not file:
@@ -298,10 +353,11 @@ class SettingsDialog(QDialog):
 
     def _save(self):
         s = self.settings
-        s.output_dir = self.output.text().strip() or s.output_dir
+        save_output_rows(s, self.pdf_row, self.epub_row)
         s.cooldown = self.cooldown.isChecked()
         s.work_minutes, s.rest_minutes, s.between_minutes = self.work.value(), self.rest.value(), self.between.value()
         s.cores, s.slots = self.cores.value(), self.slots.value()
+        s.expert = self.expert.isChecked()
         s.save()
         self.accept()
 
@@ -372,67 +428,145 @@ class FixesDialog(QDialog):
         self.accept()
 
 
-# ---------- warnings ----------
+# ---------- check book ----------
 
 PAGE_RE = re.compile(r"\bp\.?\s*(\d{1,4})\b|\bpages?\s*:?\s*\[?(\d{1,4})|\[(\d{1,4})[,\]]")
+SECTION_RE = re.compile(r"^p\s*(\d+)\s+(?:\[(\w+)\]\s+)?(.+?)\s+(?:—|\()")
 
 
-class WarningsDialog(QDialog):
-    """The book's report (what was found, what looked odd) beside the scanned page each line mentions."""
+def read_report(text: str) -> dict:
+    """The pipeline's technical report.txt → what a volunteer needs: was everything found, and which pages deserve a look."""
+    out = {"listed": None, "found": None, "missing": [], "blank": [], "notes": [], "sections": []}
+    last = None
+    for line in text.splitlines():
+        if m := re.search(r"Contents check: (\d+) listed.*?, (\d+) found", line):
+            out["listed"], out["found"] = int(m.group(1)), int(m.group(2))
+        elif m := re.search(r"Sections from the outline: (\d+)", line):
+            out["listed"] = out["found"] = int(m.group(1))
+        elif m := re.search(r"contents lists '(.+)' but it was not found", line):
+            out["missing"].append(m.group(1))
+        elif m := re.search(r"Pages with no text.*?: \[(.*)\]", line):
+            out["blank"] = [int(x) for x in re.findall(r"\d+", m.group(1))]
+        elif m := SECTION_RE.match(line):
+            last = {"page": int(m.group(1)), "kind": m.group(2) or "", "title": m.group(3).strip(), "starts": ""}
+            out["sections"].append(last)
+        elif line.strip().startswith("starts:") and last is not None and not last["starts"]:
+            last["starts"] = line.split("starts:", 1)[1].strip()
+        elif "drop cap may be missing" in line and last is not None:
+            out["notes"].append((last["page"], f"“{last['title']}” starts with a small letter — the big first letter of the chapter may be missing."))
+    return out
+
+
+class CheckDialog(QDialog):
+    """Check book: did everything come out? Plain-language results, each clickable to show the scanned page beside it."""
 
     def __init__(self, book: store.Book, parent=None):
         super().__init__(parent)
         self.book = book
-        self.setWindowTitle(f"Warnings — {book.title}")
-        self.resize(1100, 720)
+        self.setWindowTitle(f"Check — {book.title}")
+        self.resize(1100, 740)
         self.pdf = pdfium.PdfDocument(str(paths.WORK_DIR / "books" / f"{book.id}.pdf"))
+        report_file = paths.WORK_DIR / "output" / book.id / "2-assembled" / "report.txt"
+        self.raw = report_file.read_text(encoding="utf-8") if report_file.exists() else ""
+        r = read_report(self.raw)
+
         lay = QVBoxLayout(self)
-        if book.error:
-            err = QLabel(f"<b>⚠️ {book.error}</b>")
-            err.setWordWrap(True)
-            lay.addWidget(err)
-        lay.addWidget(_hint("Click a line to see the page it talks about. 'Contents check: 36 listed, 36 found' means every "
-                            "chapter was found. Pages with no text are usually pictures — check they really are."))
+        verdict = QLabel()
+        verdict.setWordWrap(True)
+        verdict.setTextFormat(Qt.RichText)
+        verdict.setStyleSheet("font-size: 16px;")
+        verdict.setText(self._verdict(r))
+        lay.addWidget(verdict)
+
         split = QSplitter()
-        self.lines = QListWidget()
-        self.lines.setWordWrap(True)
-        report = paths.WORK_DIR / "output" / book.id / "2-assembled" / "report.txt"
-        text = report.read_text(encoding="utf-8") if report.exists() else "No report yet — the book's pages haven't been put together."
-        self.lines.addItems([l for l in text.splitlines() if l.strip()])
-        self.lines.currentTextChanged.connect(self._line_chosen)
-        split.addWidget(self.lines)
+        left = QWidget()
+        lv = QVBoxLayout(left)
+        lv.setContentsMargins(0, 0, 0, 0)
+        self.look = QListWidget()
+        self.look.setWordWrap(True)
+        for page, text in self._worth_a_look(r):
+            self._add(self.look, text, page)
+        self.chapters = QListWidget()
+        self.chapters.setWordWrap(True)
+        for sec in r["sections"]:
+            label = sec["title"] + (f"\n     {sec['starts'][:90]}…" if sec["starts"] else "")
+            self._add(self.chapters, f"p {sec['page']}  ·  {label}", sec["page"])
+        self.technical = QPlainTextEdit(self.raw or "No report yet.")
+        self.technical.setReadOnly(True)
+        self.technical.hide()
+        lv.addWidget(QLabel("<b>Worth a look</b>" if self.look.count() else "<b>Nothing needs a look</b>"))
+        if self.look.count():
+            lv.addWidget(self.look, 1)
+        lv.addWidget(QLabel(f"<b>Chapters found ({len(r['sections'])})</b> — check the first words look right"))
+        lv.addWidget(self.chapters, 2)
+        lv.addWidget(self.technical, 3)
+        for lst in (self.look, self.chapters):
+            lst.currentItemChanged.connect(lambda item, _=None: item and item.data(Qt.UserRole) and self.page.setValue(item.data(Qt.UserRole)))
+        split.addWidget(left)
+
         right = QWidget()
-        r = QVBoxLayout(right)
+        rv = QVBoxLayout(right)
         nav = QHBoxLayout()
-        nav.addWidget(QLabel("Page"))
+        nav.addWidget(QLabel("Scanned page"))
         self.page = QSpinBox()
         self.page.setRange(1, len(self.pdf))
         self.page.valueChanged.connect(self._show_page)
         nav.addWidget(self.page)
         nav.addWidget(QLabel(f"of {len(self.pdf)}"))
         nav.addStretch()
-        log = QPushButton("Open log")
-        log.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(paths.LOGS_DIR / f"{book.id}.log"))))
-        nav.addWidget(log)
-        r.addLayout(nav)
+        rv.addLayout(nav)
         self.view = QLabel()
         self.view.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
         scroll = QScrollArea()
         scroll.setWidget(self.view)
         scroll.setWidgetResizable(True)
-        r.addWidget(scroll, 1)
+        rv.addWidget(scroll, 1)
         split.addWidget(right)
         split.setSizes([560, 540])
         lay.addWidget(split, 1)
+
+        bottom = QHBoxLayout()
+        tech = QPushButton("Show technical report")
+        tech.setObjectName("Link")
+        tech.clicked.connect(lambda: (self.technical.setVisible(not self.technical.isVisible()),
+                                      tech.setText("Hide technical report" if self.technical.isVisible() else "Show technical report")))
+        log = QPushButton("Open log")
+        log.setObjectName("Link")
+        log.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(paths.LOGS_DIR / f"{book.id}.log"))))
+        bottom.addWidget(tech)
+        bottom.addWidget(log)
+        bottom.addStretch()
         close = QDialogButtonBox(QDialogButtonBox.Close)
         close.rejected.connect(self.reject)
-        lay.addWidget(close)
+        bottom.addWidget(close)
+        lay.addLayout(bottom)
         self._show_page(1)
 
-    def _line_chosen(self, line: str):
-        m = PAGE_RE.search(line or "")
-        if m:
-            self.page.setValue(int(next(g for g in m.groups() if g)))
+    def _verdict(self, r: dict) -> str:
+        b = self.book
+        if b.error:
+            return f"<span style='color:{'#b3261e'}'>⚠️ <b>This book didn't finish.</b></span> {b.error}"
+        if not self.raw:
+            return "This book hasn't been put together yet — press <b>Make books</b> first."
+        if r["listed"] is None:
+            return f"Book Studio found <b>{len(r['sections'])} chapters</b>. Check the list below looks like the book's contents page."
+        if r["found"] >= r["listed"]:
+            return f"✅ <b>Looks complete</b> — all {r['listed']} chapters were found."
+        gone = r["listed"] - r["found"]
+        return (f"⚠️ <b>{gone} of {r['listed']} chapters were not found.</b> Sometimes that's fine (an index or a section the "
+                "book itself leaves out); otherwise part of the book may be missing — see below.")
+
+    @staticmethod
+    def _worth_a_look(r: dict) -> list[tuple[int | None, str]]:
+        items = [(None, f"Listed on the contents page but not found: “{t}”") for t in r["missing"]]
+        items += [(p, f"Page {p} has no text — usually a picture. Click to check it isn't a page of text that was missed.") for p in r["blank"]]
+        items += r["notes"]
+        return items
+
+    @staticmethod
+    def _add(lst: QListWidget, text: str, page: int | None):
+        lst.addItem(text)
+        lst.item(lst.count() - 1).setData(Qt.UserRole, page)
 
     def _show_page(self, n: int):
         page = self.pdf[n - 1]

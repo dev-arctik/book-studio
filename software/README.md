@@ -12,8 +12,16 @@ Status: **v0.1.0 built.** Tested on the M4 Mac: setup (page reader + model), rea
  BookStudio-0.1.0.zip → unzip → double-click "Start Book Studio" (.command / .bat / .sh)
    first time: uv → Python + packages into BookStudio/runtime/ (~10 min, internet)
    → window: setup dialog (page reader download, reading model download or "load from folder"), Desktop icon
- every day: Desktop icon → window → + Add books → (title / cover / copyright) → ▶ Make books → Open finished books
+ every day: Desktop icon → window → + Add books (files or a whole folder) → (title / cover / copyright) → ▶ Make books
+            → Check book (chapters found, pages worth a look) → Open finished books (PDF folder / EPUB folder)
 ```
+
+- **Output folders…** (toolbar): PDFs and EPUBs each go to a folder of their own choosing (default `~/Documents/Book Studio/PDF` and `/EPUB`).
+- **Several books at once:** ⌘/Ctrl- or Shift-click on the shelf; right-click makes, clears or removes them together.
+- **Stop** offers *keep progress* (continue later) or *delete progress* (start again from page 1); outside OCR it stops at once.
+- **Check book** turns the pipeline's report.txt into plain sentences beside the scanned page; the technical report is one click away.
+- **Book fixes** (the book_meta options per book) is an expert tool, hidden until Settings → Advanced → *Show expert tools*.
+- Light colours are forced even in Mac/Windows dark mode (dark-mode Qt drew a ticked checkbox as a black square); the Dock and menu bar show Book Studio's icon and name.
 
 `BookStudio/HOW TO START.pdf` (from `docs/how-to-start.typ`) walks through this, including the one-time "unidentified developer" / "Windows protected your PC" warnings.
 
