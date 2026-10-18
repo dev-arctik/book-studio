@@ -1,0 +1,4 @@
+cache-dir = "/Users/devanshraj/Projects/Work/iskcon/iskcon-youth-forum/education-material/.cache/poetry"
+
+[virtualenvs]
+in-project = true

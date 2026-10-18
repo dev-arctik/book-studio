@@ -1,0 +1,23 @@
+[project]
+name = "education-material"
+version = "0.1.0"
+description = "Turns ISKCON book PDFs into chapter-wise reading material for kids"
+authors = [
+    {name = "Devansh",email = "devansh.arctikcircle@gmail.com"}
+]
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "surya-ocr (>=0.22.1,<0.23.0)",
+    "typst (>=0.15.0,<0.16.0)",
+    "opencv-python-headless (==4.11.0.86)",
+    "pymupdf (>=1.28.2,<2.0.0)",
+    "python-docx (>=1.2.0,<2.0.0)",
+]
+
+
+[tool.poetry]
+package-mode = false
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
