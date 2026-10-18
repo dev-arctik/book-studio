@@ -9,8 +9,9 @@ output/
 *.docx
 *.azw3
 *.mobi
-# Per-book settings hold titles, captions and OCR-fix text fragments from the books
-manual/pipeline/book_meta.json
+# Per-book settings hold titles, captions and OCR-fix text fragments from the books — they live in the library, outside
+# the repo; ignored anywhere here in case a copy is dropped in
+book_meta.json
 
 # Local tools, models and environments (large, rebuilt per machine)
 tools/

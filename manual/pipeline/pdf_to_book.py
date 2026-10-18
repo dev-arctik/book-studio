@@ -3,7 +3,7 @@
 # Reads the text with pdf_text.py and writes the same output/<book>/2-assembled/book.json the scanned books produce, so
 # typeset_book.py (our A5 design) and book_to_epub.py work unchanged. Sections come from the PDF's outline; pictures keep their
 # place; tables are rebuilt row by row from their small print (zebra-shaded rows defeat table detection); drop caps rejoin.
-# Usage: poetry run python pipeline/pdf_to_book.py heart-and-soul-connection
+# Usage: poetry run python manual/pipeline/pdf_to_book.py <path/to/book.pdf> --library <path/to/book-library>
 
 import sys; sys.dont_write_bytecode = True  # keep pipeline/ free of __pycache__ clutter
 import local_env
@@ -163,6 +163,7 @@ def section_of(title: str, page: int) -> dict:
 
 def convert(book: str) -> None:
     pdf_path = local_env.find_book(book)
+    book = pdf_path.stem  # the key in output/ and book_meta.json, whether given as a path or a name
     pdf = pymupdf.open(pdf_path)
     outline = [(t.strip(), p) for level, t, p in pdf.get_toc() if level == 1]
     body, pitch, right = body_metrics([page_lines(p) for p in pdf])
@@ -231,5 +232,7 @@ def convert(book: str) -> None:
 
 
 if __name__ == "__main__":
-    for name in sys.argv[1:]:
+    if len(sys.argv) < 2:
+        sys.exit(local_env.USAGE)
+    for name in map(str, map(local_env.book_path, sys.argv[1:])):
         convert(name)

@@ -89,10 +89,10 @@ class Book:
 
 
 def builtin_meta() -> dict:
-    """Book settings imported in Settings (the finished books' fixes). Running from the repo, the manual pipeline's own file is used."""
+    """Book settings imported in Settings (the finished books' fixes). Running from the repo with BOOK_LIBRARY set, that library's book_meta.json is used."""
     data = _read_json(paths.BUILTIN_META_FILE, None)
-    if data is None and not paths.IS_INSTALLED:
-        data = _read_json(paths.PIPELINE_DIR / "book_meta.json", {})
+    if data is None and not paths.IS_INSTALLED and os.environ.get("BOOK_LIBRARY"):
+        data = _read_json(Path(os.environ["BOOK_LIBRARY"]) / "book_meta.json", {})  # the manual pipeline's library, given explicitly
     return data or {}
 
 

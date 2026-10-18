@@ -59,7 +59,7 @@ Updates never touch the data folder, so books, pages already read and settings s
 
 ## Book settings (the 13 finished books' fixes)
 
-`manual/pipeline/book_meta.json` holds titles, captions and OCR-fix text from the books, so it is **not** in git and **not** in the zip (the repo and releases are public). Share it privately; volunteers load it with Settings → Advanced → *Import book settings…* (it applies to books whose file name matches, e.g. `without-fear.pdf`). Running from the repo, the app reads it directly. New books need no settings; if one comes out wrong, *Book fixes…* edits the same options per book.
+The library's `book_meta.json` (see `manual/README.md`) holds titles, captions and OCR-fix text from the books, so it is **not** in git and **not** in the zip (the repo and releases are public). Share it privately; volunteers load it with Settings → Advanced → *Import book settings…* (it applies to books whose file name matches, e.g. `without-fear.pdf`). Running from the repo with `BOOK_LIBRARY=<path/to/book-library>` set, the app reads it directly. New books need no settings; if one comes out wrong, *Book fixes…* edits the same options per book.
 
 ## Running from the repo (development)
 
@@ -67,8 +67,8 @@ Updates never touch the data folder, so books, pages already read and settings s
 # once: the app's own environment, from uv.lock (uv lives in tools/uv, not installed globally)
 UV_CACHE_DIR=.cache/uv UV_PROJECT_ENVIRONMENT=$PWD/.cache/bs-dev-venv UV_PYTHON_INSTALL_DIR=$PWD/.cache/uv-python \
   UV_PYTHON_PREFERENCE=only-managed tools/uv/uv sync --frozen --project software
-# run (BOOK_STUDIO_HOME keeps test data away from the real data folder)
-cd software && BOOK_STUDIO_HOME=$PWD/../.cache/bs-test ../.cache/bs-dev-venv/bin/python -m book_studio
+# run (BOOK_STUDIO_HOME keeps test data away from the real data folder; BOOK_LIBRARY is optional: the finished books' settings)
+cd software && BOOK_STUDIO_HOME=$PWD/../.cache/bs-test BOOK_LIBRARY=$PWD/../../book-library ../.cache/bs-dev-venv/bin/python -m book_studio
 ```
 
 Don't run `poetry` inside `software/`: Poetry treats `software/pyproject.toml` as its own project and creates a stray `software/.venv`. Poetry is for the manual pipeline at the repo root.

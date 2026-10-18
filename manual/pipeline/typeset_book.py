@@ -1,7 +1,7 @@
 # manual/pipeline/typeset_book.py
 # Stage 3 (final): typesets the assembled book (2-assembled/book.json) into one clean PDF of the whole book using Typst and Gentium Book Plus.
 # Works for both layouts in book_meta.json — "verses" (Padyāvalī) and "prose" (Vraja-līlā) — by converting each into one shared template format.
-# Usage: poetry run python pipeline/typeset_book.py padyavali   → output/<book>/3-clean-pdf/<book>.pdf
+# Usage: poetry run python manual/pipeline/typeset_book.py <path/to/book.pdf> --library <path/to/book-library>   → output/<book>/3-clean-pdf/<book>.pdf
 
 import sys; sys.dont_write_bytecode = True  # keep pipeline/ free of __pycache__ clutter
 import local_env
@@ -231,7 +231,7 @@ def render(book: str, output: Path) -> None:
 
 
 def main():
-    book = local_env.find_book(sys.argv[1]).stem
+    book = (local_env.book_path(sys.argv[1]) if len(sys.argv) > 1 else sys.exit(local_env.USAGE)).stem
     output = local_env.stage_dir(book, "clean-pdf") / f"{book}.pdf"
     render(book, output)
     print(f"Wrote {output}")

@@ -2,8 +2,8 @@
 # Stage 1 of the scanned-book pipeline: OCRs every page of a PDF with Surya and saves one JSON per page under output/<book>/1-ocr/.
 # Resumable — pages that already have a JSON are skipped, so an interrupted overnight run can simply be restarted.
 # --fix re-reads single blocks the full-page OCR got wrong (crop of just that block, so nearby text can't bleed in).
-# Usage: poetry run python pipeline/ocr_book.py padyavali [first_page last_page]
-#        poetry run python pipeline/ocr_book.py padyavali --fix 169:4 261:4   (page:block, block = position in reading order)
+# Usage: poetry run python manual/pipeline/ocr_book.py <path/to/book.pdf> --library <path/to/book-library> [first_page last_page]
+#        poetry run python manual/pipeline/ocr_book.py <path/to/book.pdf> --library <path/to/book-library> --fix 169:4 261:4   (page:block, block = position in reading order)
 
 import sys; sys.dont_write_bytecode = True  # keep pipeline/ free of __pycache__ clutter
 import local_env  # noqa: F401  (must run before surya import to pin caches locally)
@@ -87,7 +87,7 @@ def fix_blocks(pdf_path: Path, out_dir: Path, specs: list[str]):
 
 
 def main():
-    pdf_path = local_env.find_book(sys.argv[1])
+    pdf_path = local_env.book_path(sys.argv[1]) if len(sys.argv) > 1 else sys.exit(local_env.USAGE)
     out_dir = local_env.stage_dir(pdf_path.stem, "ocr")
     if "--fix" in sys.argv:
         fix_blocks(pdf_path, out_dir, sys.argv[sys.argv.index("--fix") + 1 :])

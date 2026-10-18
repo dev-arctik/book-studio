@@ -4,7 +4,7 @@ Scanned ISKCON books → clean, diacritic-correct PDFs for kids at a charity you
 
 ## Hard rules
 
-- **Book content never leaves our own computers.** The PDFs are internal ISKCON material, not released online. No uploads, no artifacts/publishing, no cloud OCR or LLM APIs on book text, no book content on GitHub. The repo goes to a **public GitHub repo** (approved 2026-10-18, so Book Studio can self-update from GitHub Releases) — code and docs only: `.gitignore` keeps out `books/`, `output/`, every .pdf/.epub/.docx and `manual/pipeline/book_meta.json` (it holds titles, captions and OCR-fix text fragments); release zips leave it out too. Never force-add book files; creating the repo, pushing and publishing releases are confirmed with Devansh first. The OCR (Surya via a local `llama-server` on 127.0.0.1) and typesetting (Typst) are fully local — keep it that way.
+- **Book content never leaves our own computers.** The PDFs are internal ISKCON material, not released online. No uploads, no artifacts/publishing, no cloud OCR or LLM APIs on book text, no book content on GitHub. The repo goes to a **public GitHub repo** (approved 2026-10-18, so Book Studio can self-update from GitHub Releases) — code and docs only: `.gitignore` keeps out `books/`, `output/`, every .pdf/.epub/.docx and `book_meta.json`, which lives in the library, not the repo (it holds titles, captions and OCR-fix text fragments); release zips leave it out too. Never force-add book files; creating the repo, pushing and publishing releases are confirmed with Devansh first. The OCR (Surya via a local `llama-server` on 127.0.0.1) and typesetting (Typst) are fully local — keep it that way.
 - **Nothing installed globally** (Mac is low on disk). Poetry venv and cache, HF model cache (`HF_HOME`), Surya `MODEL_CACHE_DIR`, the `llama-server` binary and fonts all live inside the project. `manual/pipeline/local_env.py` pins these (`PIPELINE_DIR` = the scripts, `PROJECT_ROOT` = the repo root where books, output, tools and caches live) — every pipeline script imports it first.
 - **Faithful to the original.** Fix OCR errors (checked against the scan); never "correct" the printed book's own typos or spellings.
 - **Never touch the user's personal files** (e.g. in ~/Downloads); only files explicitly named as books.
@@ -19,11 +19,11 @@ Scanned ISKCON books → clean, diacritic-correct PDFs for kids at a charity you
 
 ## Pipeline
 
-Scripts live in `manual/pipeline/`; run them from the repo root (`poetry run python manual/pipeline/run_book.py <book>`). `run_book.py <book>` = `ocr_book.py` → `assemble_verses.py` | `assemble_prose.py` (chosen by `layout` in `book_meta.json`) → `typeset_book.py`.
+**Code and books live apart.** The repo (`book-studio/`, public) holds only code and docs; books, OCR work, `book_meta.json`, llama-server, fonts and the model live in the **library** folder outside it (here `../book-library`, same layout as Book Studio's data folder: `books/originals`, `books/final/{pdf,epub,word}`, `books/STATUS.md`, `output/<book>/`, `tools/`, `.cache/`). Every script takes the paths explicitly — the book's PDF and `--library` (or `BOOK_LIBRARY`); nothing is looked up in a default place (user asked 2026-10-18): `poetry run python manual/pipeline/run_book.py <path/to/book.pdf> --library <path/to/book-library>`, run from the repo root. The book's key is the PDF's file name without `.pdf`. `run_book.py` = `ocr_book.py` → `assemble_verses.py` | `assemble_prose.py` (chosen by `layout` in `book_meta.json`) → `typeset_book.py`.
 
 | File | Role |
 |---|---|
-| `local_env.py` | Paths, numbered output stages (`1-ocr`, `2-assembled`, `3-clean-pdf`, `logs`), `find_book()` (searches all of `books/`), local cache env vars |
+| `local_env.py` | Reads `--library` (or `BOOK_LIBRARY`; Book Studio sets `BOOK_STUDIO_DATA`) and stops with a usage message without it; paths, numbered output stages (`1-ocr`, `2-assembled`, `3-clean-pdf`, `logs`); `book_path()` (the command-line PDF, must exist) and `find_book()` (by key: the path given this run, else `books/` in the library); `final_path()`; local cache env vars |
 | `ocr_book.py` | Surya OCR, 4 pages per call, resumable (skips existing `page-NNN.json`); `--fix page:block` re-OCRs one block from a tight crop |
 | `ocr_text.py` | Shared helpers: HTML clean-up, non-IAST look-alike fixes (`î→ī`, `ş→ṣ`, `○→O`…), line joining, paragraph gluing across page breaks, title matching, back-cover removal, `text_fixes` |
 | `assemble_verses.py` | Verse anthologies (Padyāvalī): chapters from "title + (English title)" headings, verses by "Verse N", word-for-word/translation/poet state machine, title reconciliation against the contents page |
@@ -54,7 +54,7 @@ The desktop app runs `manual/pipeline` **unchanged**, pointed at its own data fo
 ## How to verify (do this every time)
 
 - **`report.txt` is the source of truth for completeness.** Verse books: verse numbers continuous, every contents entry found. Prose books: every contents entry found in order, first words of each chapter sane, no unexplained blank pages. Check every flag against the scan (render with `pdftoppm` into `.cache/tmp/`, view, delete).
-- **After changing shared code, prove finished books didn't change:** rebuild them and `cmp`/`diff` `book.json` and `pdftotext` output against the version in `books/final/`. Then delete the rebuild.
+- **After changing shared code, prove finished books didn't change:** rebuild them and `cmp`/`diff` `book.json` and `pdftotext` output against the version in the library's `books/final/`. Then delete the rebuild.
 - Render a few pages of the new PDF and look at them before calling a book done; `pdffonts` should list only Gentium (a fallback font means a character Gentium lacks).
 - **Bold and italic must survive** (the user checks this): italic Sanskrit terms and book titles, bold names, bold Sanskrit words in word-for-word glosses. Compare `<i>`/`<b>` span counts in `1-ocr/` with those in `2-assembled/book.json` per chapter (a chapter that loses them all means emphasis was stripped), and compare rendered pages with the scan side by side.
 
@@ -95,6 +95,6 @@ The desktop app runs `manual/pipeline` **unchanged**, pointed at its own data fo
 - Gentium lacks `✦` (falls back to a math font) — the ornament is drawn with shapes.
 - Typst only reads files under the project root, hence the temporary `.build/` folder.
 
-## Remaining books (in `books/originals/`, which also keeps the scans of finished books)
+## Remaining books (in the library's `books/originals/`, which also keeps the scans of finished books)
 
 - `transcendental-diary.pdf` — digital ebook (no OCR needed). A Hindi translation was declined pending the author's (Hari-śauri dāsa) permission; do not translate it in full without that.

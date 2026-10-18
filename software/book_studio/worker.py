@@ -103,7 +103,7 @@ def make_book(book_id: str) -> None:
             emit("stage", stage="text")
             import pdf_to_book
 
-            pdf_to_book.convert(book_id)
+            pdf_to_book.convert(str(pdf))
         else:
             import ocr_book  # loads Surya (and PyTorch) — a few seconds
 
@@ -130,7 +130,7 @@ def make_book(book_id: str) -> None:
             import assemble_prose
             import assemble_verses
 
-            sys.argv = ["assemble", book_id]
+            sys.argv = ["assemble", str(pdf)]  # the pipeline takes the PDF's path, as on the command line
             (assemble_verses if meta["layout"] == "verses" else assemble_prose).main()
 
         # Finished books: PDFs and e-books each in the folder chosen for them
@@ -143,7 +143,7 @@ def make_book(book_id: str) -> None:
         emit("stage", stage="typeset")
         import typeset_book
 
-        sys.argv = ["typeset", book_id]
+        sys.argv = ["typeset", str(pdf)]
         typeset_book.main()
         pdf_out = pdf_dir / f"{name}.pdf"
         shutil.move(local_env.stage_dir(book_id, "clean-pdf") / f"{book_id}.pdf", pdf_out)
@@ -152,7 +152,7 @@ def make_book(book_id: str) -> None:
         emit("stage", stage="epub")
         import book_to_epub
 
-        book_to_epub.convert(book_id)
+        book_to_epub.convert(str(pdf))
         epub_out = epub_dir / f"{name}.epub"
         shutil.move(local_env.final_path(f"{book_id}_en.epub"), epub_out)
         emit("done", pdf=str(pdf_out), epub=str(epub_out))

@@ -1,7 +1,7 @@
 # manual/pipeline/assemble_verses.py
 # Stage 2 for verse-anthology books (layout "verses" in book_meta.json, e.g. Padyāvalī): per-page OCR → chapters → verses → (Sanskrit, word-for-word, translation, poet).
 # Drops running headers, page numbers and decorations, and re-joins text that a page break split in two. Prose books use assemble_prose.py.
-# Usage: poetry run python pipeline/assemble_verses.py padyavali   → output/<book>/2-assembled/{book.json, report.txt}
+# Usage: poetry run python manual/pipeline/assemble_verses.py <path/to/book.pdf> --library <path/to/book-library>   → output/<book>/2-assembled/{book.json, report.txt}
 
 import sys; sys.dont_write_bytecode = True  # keep pipeline/ free of __pycache__ clutter
 import local_env
@@ -248,7 +248,7 @@ def build_report(chapters) -> list[str]:
 
 
 def main():
-    book = local_env.find_book(sys.argv[1]).stem
+    book = (local_env.book_path(sys.argv[1]) if len(sys.argv) > 1 else sys.exit(local_env.USAGE)).stem
     blocks, pictures = load_blocks(book)
     intro, chapters, skipped, front_text = assemble(blocks, pictures)
     entries = contents_entries(front_text)

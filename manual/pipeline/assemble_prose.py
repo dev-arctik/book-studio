@@ -3,7 +3,7 @@
 # Sections come from the book's own contents list, matched in order, so none can be missed or invented — including Parts, and index
 # sections that are dropped. Block types: paragraph, verse quote, source, signature, subheading, figure, scene break and endnote.
 # Verse anthologies use assemble_verses.py instead.
-# Usage: poetry run python pipeline/assemble_prose.py vraja-lila-part2   → output/<book>/2-assembled/{book.json, report.txt}
+# Usage: poetry run python manual/pipeline/assemble_prose.py <path/to/book.pdf> --library <path/to/book-library>   → output/<book>/2-assembled/{book.json, report.txt}
 
 import sys; sys.dont_write_bytecode = True  # keep pipeline/ free of __pycache__ clutter
 import local_env
@@ -710,7 +710,7 @@ def build_report(sections, contents, skipped, blank, fixes, missed) -> list[str]
 
 
 def main():
-    book = local_env.find_book(sys.argv[1]).stem
+    book = (local_env.book_path(sys.argv[1]) if len(sys.argv) > 1 else sys.exit(local_env.USAGE)).stem
     meta = json.loads(META_FILE.read_text(encoding="utf-8"))[book]
     blocks, numbered_pages = load_blocks(book, meta.get("academic", False), set(meta.get("facsimile_pages", [])), meta.get("inset_quotes", False),
                                          meta.get("running_heads", []))  # academic flag also goes to assemble()

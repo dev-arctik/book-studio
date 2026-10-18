@@ -2,7 +2,7 @@
 # Turns one of our processed books (output/<book>/2-assembled/book.json) into an EPUB for Kindle and other e-readers:
 # books/final/<book>_en.epub, with the same chapters, quotations, notes and photos (with captions) as its PDF.
 # Reuses typeset_book.py's conversion and picture cropping, so the e-book and the PDF can't drift apart; packaging is epub_pack.py.
-# Usage: poetry run python pipeline/book_to_epub.py a-spiritual-journey
+# Usage: poetry run python manual/pipeline/book_to_epub.py <path/to/book.pdf> --library <path/to/book-library>
 
 import sys; sys.dont_write_bytecode = True  # keep pipeline/ free of __pycache__ clutter
 import local_env
@@ -146,5 +146,7 @@ def convert(book: str) -> None:
 
 
 if __name__ == "__main__":
-    for name in sys.argv[1:]:
+    if len(sys.argv) < 2:
+        sys.exit(local_env.USAGE)
+    for name in map(str, map(local_env.book_path, sys.argv[1:])):
         convert(name)

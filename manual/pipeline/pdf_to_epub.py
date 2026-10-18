@@ -2,7 +2,7 @@
 # Turns a finished, text-based book PDF (not a scan) into an EPUB e-book: books/final/pdf/<book>.pdf → books/final/epub/<book>.epub.
 # Chapters come from the PDF's own outline and the cover from page 1. Text comes from pdf_text.py; the packaging (clickable
 # contents, embedded Gentium) from epub_pack.py. Our processed books use book_to_epub.py instead (it keeps their photos).
-# Usage: poetry run python pipeline/pdf_to_epub.py bhakti-bhava_en
+# Usage: poetry run python manual/pipeline/pdf_to_epub.py <path/to/book.pdf> --library <path/to/book-library>
 
 import sys; sys.dont_write_bytecode = True  # keep pipeline/ free of __pycache__ clutter
 import local_env
@@ -63,6 +63,7 @@ def chapter_html(paras: list[dict], body: float) -> str:
 
 def convert(book: str) -> None:
     pdf_path = local_env.find_book(book)
+    book = pdf_path.stem  # the key in output/ and book_meta.json, whether given as a path or a name
     meta = json.loads(META_FILE.read_text(encoding="utf-8")).get(book, {})
     title, subtitle, author = meta.get("title", book), meta.get("subtitle", ""), meta.get("author", "")
     pdf = pymupdf.open(pdf_path)
@@ -105,5 +106,7 @@ def convert(book: str) -> None:
 
 
 if __name__ == "__main__":
-    for name in sys.argv[1:]:
+    if len(sys.argv) < 2:
+        sys.exit(local_env.USAGE)
+    for name in map(str, map(local_env.book_path, sys.argv[1:])):
         convert(name)

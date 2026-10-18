@@ -2,7 +2,7 @@
 # Turns a finished, text-based book PDF (not a scan) into an editable Word file: books/final/pdf/<book>.pdf → books/final/word/<book>.docx.
 # The text itself is rebuilt by pdf_text.py (paragraphs, headings, bold/italic, verse breaks); this file only writes Word.
 # Page numbers are dropped (Word numbers its own pages).
-# Usage: poetry run python pipeline/pdf_to_docx.py charu-vilas-vol2_en charu-vilas-vol2_hi
+# Usage: poetry run python manual/pipeline/pdf_to_docx.py <path/to/book.pdf> --library <path/to/book-library>
 
 import sys; sys.dont_write_bytecode = True  # keep pipeline/ free of __pycache__ clutter
 import local_env
@@ -54,6 +54,7 @@ def add_run(paragraph, r: dict, body: float, kind: str) -> None:
 
 def convert(book: str) -> None:
     pdf_path = local_env.find_book(book)
+    book = pdf_path.stem  # the key in output/ and book_meta.json, whether given as a path or a name
     pdf = pymupdf.open(pdf_path)
     paras, body = read_pdf(pdf)
     hindi = any(DEVANAGARI_RE.search(p["text"]) for p in paras[:50])
@@ -76,5 +77,7 @@ def convert(book: str) -> None:
 
 
 if __name__ == "__main__":
-    for name in sys.argv[1:]:
+    if len(sys.argv) < 2:
+        sys.exit(local_env.USAGE)
+    for name in map(str, map(local_env.book_path, sys.argv[1:])):
         convert(name)
