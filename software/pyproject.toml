@@ -14,6 +14,7 @@ dependencies = [
     "pymupdf (>=1.28.2,<2.0.0)",
     "opencv-python-headless (==4.11.0.86)",
     "torch (==2.14.1)",  # listed directly so the Linux CPU-only source below applies
+    "psutil (>=7,<8)",  # battery level, so making books pauses before a laptop runs flat
 ]
 
 [tool.uv]

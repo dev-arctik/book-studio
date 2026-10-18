@@ -45,7 +45,7 @@ Double-click the *Book Studio* icon on your Desktop. No internet needed.
 #step(3)[*Make ticked books* — each book goes through *Read → Chapters → PDF → EPUB*; its row shows where it is, with pages done and time left, and the card at the top shows the whole run. A big book takes many hours.]
 #step(4)[*Open finished books* — the PDFs are in the *PDF* folder, the e-books in the *EPUB* folder.]
 
-#note[*Cooling down.* While reading pages the computer works hard. By default Book Studio works 60 minutes, then rests 15, and rests an hour between books (change it in *Settings*). *Pause*, *Stop* or even closing Book Studio loses nothing — pages already read are kept, and *Make ticked books* continues where it stopped. Keep a laptop plugged in.]
+#note[*Cooling down.* While reading pages the computer works hard. By default Book Studio works 60 minutes, then rests 15, and rests an hour between books (change it in *Settings*). *Pause*, *Stop* or even closing Book Studio loses nothing — pages already read are kept, and *Make ticked books* continues where it stopped. Keep a laptop *plugged in* and its *lid open*: Book Studio keeps the computer awake while it works, and if the battery drops below 15 % it pauses by itself until the charger is plugged in.]
 
 == If something goes wrong
 

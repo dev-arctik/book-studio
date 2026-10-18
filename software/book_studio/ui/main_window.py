@@ -25,11 +25,12 @@ from . import style
 from .book_list import BookList, RowState
 from .book_panel import BookPanel
 from .dialogs import CheckDialog, FixesDialog, OutputDialog, SettingsDialog, SetupDialog, Task, offer_update
+from power import LOW_BATTERY, battery  # noqa: E402  (manual/pipeline/power.py, shared with the worker)
 
 SCAN_STEPS = ["Read", "Chapters", "PDF", "EPUB"]
 DIGITAL_STEPS = ["Text", "PDF", "EPUB"]
 # Which step a worker stage belongs to (index into the book's steps; digital books have no Chapters step)
-STAGE_STEP = {"starting": "first", "ocr": "first", "rest": "first", "paused": "first", "text": "first",
+STAGE_STEP = {"starting": "first", "ocr": "first", "rest": "first", "paused": "first", "battery": "first", "text": "first",
               "assemble": "Chapters", "typeset": "PDF", "epub": "EPUB"}
 STAGE_TEXT = {
     "starting": "Starting the page reader…",
@@ -113,6 +114,8 @@ class MainWindow(QMainWindow):
         self.delete_after_stop: str | None = None  # book whose progress to throw away once it has stopped
         self.current_hash = ""  # the book's settings when it started — edits made while it runs show as 'Changed' afterwards
         self.finished_note = ""
+        self.battery_pct = 0  # battery % when reading paused for low battery
+        self.power_seen = 0.0  # when the power line was last refreshed
         self.selected: str | None = None  # the book shown in the details panel
         self.thumbs: dict[str, QPixmap] = {}
 
@@ -215,7 +218,9 @@ class MainWindow(QMainWindow):
         self.run_bar.setFixedHeight(10)
         self.run_numbers = QLabel()
         self.run_numbers.setObjectName("Hint")
-        for w in (self.run_title, self.run_line, self.run_bar, self.run_numbers):
+        self.power_line = QLabel()  # plugged in / on battery, while books are being made
+        self.power_line.setTextFormat(Qt.RichText)
+        for w in (self.run_title, self.run_line, self.run_bar, self.run_numbers, self.power_line):
             col.addWidget(w)
         h.addLayout(col, 1)
         self.make_btn = QPushButton("▶  Make ticked books")
@@ -268,21 +273,33 @@ class MainWindow(QMainWindow):
     # ---------- first run, updates ----------
 
     def _first_run(self):
+        """On opening: look for an update first (a fix may matter for the books about to be made), then set up if needed."""
+        if paths.IS_INSTALLED or os.environ.get("BOOK_STUDIO_CHECK_UPDATES"):
+            self.run_title.setText("Checking for updates…")
+            self.check_updates(quiet=True, then=self._setup_if_needed)
+        else:
+            self._setup_if_needed()
+
+    def _setup_if_needed(self):
+        self._refresh_run_card()
         if not (engine.engine_ready() and engine.model_ready()):
             SetupDialog(self.settings, self).exec()
-        if paths.IS_INSTALLED or os.environ.get("BOOK_STUDIO_CHECK_UPDATES"):
-            QTimer.singleShot(3000, lambda: self.check_updates(quiet=True))
 
-    def check_updates(self, quiet: bool):
+    def check_updates(self, quiet: bool, then=None):
+        """Asks GitHub for a newer release (offline: gives up after a few seconds); then() runs afterwards unless updating."""
         self._update_task = Task(lambda progress: updater.latest_release(), parent=self)
 
         def found(release):
             if release is None:
                 if not quiet:
                     QMessageBox.information(self, "Updates", "You have the newest Book Studio.")
-            elif not self.runner and offer_update(self, self.settings, release, quiet):
+            elif not self.runner and offer_update(self, release):
                 QApplication.quit()
+                return
+            if then:
+                then()
         self._update_task.succeeded.connect(found)
+        self._update_task.failed.connect(lambda _: then and then())
         self._update_task.start()
 
     # ---------- library ----------
@@ -373,7 +390,7 @@ class MainWindow(QMainWindow):
         if b.id == self.current:
             key = STAGE_STEP.get(self.phase, "first")
             active = 0 if key == "first" else (names.index(key) if key in names else 1)
-            look = "paused" if self.phase in ("paused", "rest") else "active"
+            look = "paused" if self.phase in ("paused", "rest", "battery") else "active"
             if active == 0 and b.kind != "digital" and self.progress_info.get("done", 0) >= b.pages > 0 and self.phase == "ocr":
                 look = "active"
             return [(n, "done" if i < active else look if i == active else "todo") for i, n in enumerate(names)]
@@ -405,13 +422,16 @@ class MainWindow(QMainWindow):
         if b.id == self.current:
             info = self.progress_info
             st.colour = style.ACCENT
-            if self.phase in ("ocr", "rest", "paused") and info.get("total"):
+            if self.phase in ("ocr", "rest", "paused", "battery") and info.get("total"):
                 st.status = f"Reading pages — {info['done']} of {info['total']}"
                 st.progress = (info["done"], info["total"])
                 left = self.book_seconds_left(b)
                 if self.phase == "rest":
                     st.status, st.colour = f"Resting to cool down — {fmt_clock(self.rest_until - time.monotonic())}", style.WARN
                     st.detail = f"{info['done']} of {info['total']} pages read"
+                elif self.phase == "battery":
+                    st.status, st.colour = f"Battery low ({self.battery_pct} %) — paused", style.BAD
+                    st.detail = "plug in the charger — it continues by itself"
                 elif self.phase == "paused":
                     st.status, st.colour = "Paused", style.WARN
                     st.detail = f"{info['done']} of {info['total']} pages read — press Resume"
@@ -485,6 +505,7 @@ class MainWindow(QMainWindow):
         self.list.row(b.id).show_state(self.row_state(b), current=b.id == self.selected and self.panel.isVisible())
 
     def _refresh_all(self):
+        self._refresh_power()
         for b in self.library.books:
             self._refresh_row(b)
         self._refresh_panel()
@@ -570,10 +591,28 @@ class MainWindow(QMainWindow):
     def _tick(self):
         if self.between_until and time.monotonic() >= self.between_until:
             self.start_next()
+        if time.monotonic() - self.power_seen > 10:
+            self.power_seen = time.monotonic()
+            self._refresh_power()
         if self.runner or self.between_until:
             if self.current:
                 self._refresh_row(self.library.get(self.current))
             self._refresh_run_card()
+
+    def _refresh_power(self):
+        """While books are being made: plugged in (keep the lid open) or on battery (plug in; pauses below 15 %)."""
+        working = self.runner is not None or bool(self.between_until)
+        b = battery() if working else None
+        self.power_line.setVisible(b is not None)
+        if b is None:
+            return
+        percent, plugged = b
+        if plugged:
+            self.power_line.setText(f"<span style='color:{style.OK}'>🔌 Plugged in</span> · the computer stays awake while books are "
+                                    "made — keep the lid open")
+        else:
+            self.power_line.setText(f"<span style='color:{style.WARN}'><b>🔋 On battery ({percent} %) — please plug in the charger.</b></span> "
+                                    f"Book Studio pauses by itself below {LOW_BATTERY} %.")
 
     # ---------- rows: click, tick, menu ----------
 
@@ -716,6 +755,12 @@ class MainWindow(QMainWindow):
             return
         if not self.runner and not self.between_until:  # a new run
             self.run_ids, self.run_done, self.finished_note = [], [], ""
+            b = battery()
+            if b and not b[1]:
+                QMessageBox.information(self, "Plug in the charger",
+                                        f"This computer is on battery ({b[0]} %). Making books takes hours — please plug in the charger "
+                                        "and keep the lid open.\n\nBook Studio keeps the computer awake while it works, and pauses by itself "
+                                        f"if the battery drops below {LOW_BATTERY} %.")
         self.run_ids += todo
         self.queue += todo
         self.stop_requested = False
@@ -766,9 +811,18 @@ class MainWindow(QMainWindow):
                 self.settings.save()
         elif kind == "stage":
             self.phase = ev["stage"]
+            if self.phase == "typeset":  # the worker reads the book's settings now: edits made until here are in this build
+                self.panel.flush()
+                self.library.save()
+                self.current_hash = store.fingerprint(b, store.builtin_meta())
         elif kind == "rest":
             self.phase, self.rest_until = "rest", time.monotonic() + ev["seconds"]
             self.progress_info["rest_start"] = time.monotonic()
+        elif kind == "battery":
+            self.phase, self.battery_pct = "battery", ev["percent"]
+            self.progress_info["rest_start"] = time.monotonic()
+            QApplication.alert(self)
+            self._refresh_power()
         elif kind == "paused":
             self.phase = "paused"
             self.progress_info["rest_start"] = time.monotonic()

@@ -16,6 +16,8 @@ from pathlib import Path
 
 import pypdfium2 as pdfium
 
+import power
+
 from surya.inference import SuryaInferenceManager
 from surya.recognition import RecognitionPredictor
 
@@ -94,7 +96,9 @@ def main():
         return
     total = len(pdfium.PdfDocument(str(pdf_path)))
     first, last = (int(sys.argv[2]), int(sys.argv[3])) if len(sys.argv) > 3 else (1, total)
-    ocr_all(pdf_path, out_dir, first, last)
+    low = lambda pct: print(f"Battery at {pct}% — paused until the charger is plugged in (or {power.RESUME_BATTERY}%)…", flush=True)  # noqa: E731
+    with power.keep_awake():
+        ocr_all(pdf_path, out_dir, first, last, after_chunk=lambda _: power.wait_for_power(low, lambda: print("Power back — continuing", flush=True)))
 
 
 if __name__ == "__main__":

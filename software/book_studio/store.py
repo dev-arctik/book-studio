@@ -48,7 +48,6 @@ class Settings:
     cores: int = max(1, (os.cpu_count() or 2) // 2)
     slots: int = 4  # parallel OCR slots: each holds its own memory (≈1.7 GB in all at 4 on the M4)
     engine: str = ""  # installed llama-server build, e.g. "macos-arm64", "win-vulkan-x64"
-    skipped_version: str = ""
     expert: bool = False  # shows Book fixes; volunteers don't need it
     details_open: bool = False  # the book details panel on the right (collapsible)
     sec_per_page: float = 0.0  # this computer's measured reading speed, for time-left estimates before the first pages

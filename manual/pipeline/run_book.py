@@ -11,6 +11,8 @@ import json
 import subprocess
 from pathlib import Path
 
+import power
+
 ASSEMBLERS = {"verses": "assemble_verses.py", "prose": "assemble_prose.py"}
 
 
@@ -20,12 +22,17 @@ def main():
     meta = json.loads(local_env.META_FILE.read_text(encoding="utf-8"))
     if book not in meta:
         sys.exit(f"Add '{book}' to {local_env.META_FILE} first (title, author, layout: verses or prose)")
+    with power.keep_awake():  # the whole run: a sleeping laptop would stop the OCR for hours
+        run_stages(pdf, book, meta)
+    print("\nAll stages done.")
+
+
+def run_stages(pdf, book, meta):
     here = Path(__file__).parent
     for script in ["ocr_book.py", ASSEMBLERS[meta[book]["layout"]], "typeset_book.py"]:
         print(f"\n=== {script} {book} ===", flush=True)
         if subprocess.run([sys.executable, str(here / script), str(pdf), "--library", str(local_env.PROJECT_ROOT)]).returncode != 0:
             sys.exit(f"Stopped: {script} failed (fix the error above, then re-run — finished work is kept)")
-    print("\nAll stages done.")
 
 
 if __name__ == "__main__":

@@ -46,11 +46,11 @@ Book Studio was made for an ISKCON youth forum, to give young readers these book
 3. **▶ Make ticked books.** Each row shows where its book is — **Read → Chapters → PDF → EPUB** — with pages done and time left; the card at the top shows the whole run.
 4. **Open finished books** → *PDF folder* / *EPUB folder* (choose where they go with **Output folders…**).
 
-Reading pages is slow — a 500-page book takes several hours on a laptop. You can **Pause**, **Stop** (keeping or deleting what was done), or even close Book Studio: pages already read are kept, and *Make* continues where it stopped. By default it works 60 minutes, then **rests 15** so laptops cool down, and rests between books (change it in *Settings*).
+Reading pages is slow — a 500-page book takes several hours on a laptop. You can **Pause**, **Stop** (keeping or deleting what was done), or even close Book Studio: pages already read are kept, and *Make* continues where it stopped. By default it works 60 minutes, then **rests 15** so laptops cool down, and rests between books (change it in *Settings*). Keep a laptop **plugged in** with the lid open: Book Studio keeps the computer from sleeping while it works, and **pauses by itself below 15 % battery** until the charger is plugged in. Book details (cover, title, copyright page) can be changed while a book is being read — they are used when its PDF is made.
 
 ### Updates
 
-When a new version is published here, Book Studio offers **Update now** when it starts. Your books, settings and pages already read are kept.
+Every time it opens, Book Studio first checks for a new version here; if there is one, it asks *There is an update — do you want to update now?* Your books, settings and pages already read are kept.
 
 ## Privacy
 

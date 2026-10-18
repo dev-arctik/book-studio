@@ -577,23 +577,17 @@ class CheckDialog(QDialog):
 
 # ---------- updates ----------
 
-def offer_update(parent, settings: store.Settings, release: dict, quiet: bool) -> bool:
-    """Asks to update; returns True when the update is staged and the app should quit so the launcher can swap it in."""
-    if quiet and release["version"] == settings.skipped_version:
-        return False
+def offer_update(parent, release: dict) -> bool:
+    """Pop-up: there is an update, update now? True when the update is staged and the app should quit so the launcher swaps it in."""
     box = QMessageBox(parent)
     box.setWindowTitle("Update available")
-    box.setText(f"<b>Book Studio {release['version']}</b> is available (you have {__version__}).")
+    box.setText(f"<b>There is an update — Book Studio {release['version']}.</b><br>Do you want to update now?")
     box.setInformativeText((release["notes"][:800] + "\n\n" if release["notes"] else "")
-                           + "Your books, settings and the pages already read are kept.")
+                           + f"You have {__version__}. Your books, settings and the pages already read are kept.")
     now = box.addButton("Update now", QMessageBox.AcceptRole)
-    box.addButton("Later", QMessageBox.RejectRole)
-    skip = box.addButton("Skip this version", QMessageBox.DestructiveRole) if quiet else None
+    box.addButton("Not now", QMessageBox.RejectRole)
+    box.setDefaultButton(now)
     box.exec()
-    if box.clickedButton() is skip:
-        settings.skipped_version = release["version"]
-        settings.save()
-        return False
     if box.clickedButton() is not now:
         return False
     if not paths.IS_INSTALLED:

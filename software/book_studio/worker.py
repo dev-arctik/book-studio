@@ -62,6 +62,15 @@ def rest(seconds: int) -> None:
     emit("resumed")
 
 
+def wait_for_power() -> None:
+    """Low battery: pause between page batches until the laptop is plugged in (or recharged), so it never runs flat mid-book."""
+    import power
+
+    if not power.wait_for_power(lambda percent: emit("battery", percent=percent), lambda: emit("resumed"),
+                                lambda: control().get("stop")):
+        raise Stopped
+
+
 def is_digital(book: store.Book, pdf: Path) -> bool:
     """A PDF with real text and a chapter outline (like Heart and Soul) needs no OCR; scans do."""
     kind = book.fixes.get("kind", "auto")
@@ -119,11 +128,13 @@ def make_book(book_id: str) -> None:
                     stage = "ocr"
                     emit("ocr", done=done(), total=book.pages)
                     wait_while_paused()
+                    wait_for_power()
                     if settings.cooldown and time.monotonic() - work_start >= settings.work_minutes * 60 and done() < book.pages:
                         rest(settings.rest_minutes * 60)
                         work_start = time.monotonic()
 
                 wait_while_paused()
+                wait_for_power()
                 ocr_book.ocr_all(pdf, ocr_dir, 1, book.pages, after_chunk=after_chunk)
             stage = "assemble"
             emit("stage", stage="assemble")
@@ -133,6 +144,8 @@ def make_book(book_id: str) -> None:
             sys.argv = ["assemble", str(pdf)]  # the pipeline takes the PDF's path, as on the command line
             (assemble_verses if meta["layout"] == "verses" else assemble_prose).main()
 
+        # Read the settings again: a title, cover or copyright choice changed while the pages were being read applies now
+        meta = json.loads(local_env.META_FILE.read_text(encoding="utf-8"))[book_id]
         # Finished books: PDFs and e-books each in the folder chosen for them
         pdf_dir, epub_dir = settings.pdf_folder(), settings.epub_folder()
         pdf_dir.mkdir(parents=True, exist_ok=True)
@@ -170,7 +183,11 @@ def main() -> None:
     log.write(f"\n===== {datetime.now():%Y-%m-%d %H:%M} — making {book_id} =====\n")
     sys.stdout = sys.stderr = log
     os.environ.setdefault("PYTHONUNBUFFERED", "1")
-    make_book(book_id)
+    sys.path.insert(0, str(paths.PIPELINE_DIR))
+    import power
+
+    with power.keep_awake():  # a sleeping laptop would stop the book for hours
+        make_book(book_id)
 
 
 if __name__ == "__main__":
