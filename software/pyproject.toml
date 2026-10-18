@@ -4,7 +4,7 @@
 
 [project]
 name = "book-studio"
-version = "0.1.0"
+version = "0.1.1"
 description = "Turns scanned ISKCON books into clean PDFs and EPUBs, fully offline"
 requires-python = ">=3.12,<3.13"
 dependencies = [
