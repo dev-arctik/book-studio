@@ -3,6 +3,8 @@
 # Framed Deity photos: finds the photo (solid mid-grey area) and the decorative frame's border lines around it, and crops just inside them.
 # Line drawings and unframed photos: trims the white margins; colour pictures keep their colour. Ornaments (drop caps, dividers, corner swirls) are filtered out by is_illustration().
 
+from pathlib import Path
+
 import cv2
 import numpy as np
 import pypdfium2 as pdfium
@@ -81,7 +83,10 @@ def book_cover(pdf_path, meta: dict, height: int = 1600) -> Image.Image:
     if not meta.get("cover_file"):
         return cover_image(pdf_path, height)
     # Relative paths are from the repo root, so the build works from any folder; Book Studio's absolute paths pass through unchanged
-    path = local_env.PROJECT_ROOT / meta["cover_file"]
+    path = (local_env.PROJECT_ROOT / meta["cover_file"]).resolve()
+    # A relative path must stay inside the project: "../../" in a shared settings file must not reach other files on the computer
+    if not Path(meta["cover_file"]).is_absolute() and not path.is_relative_to(local_env.PROJECT_ROOT.resolve()):
+        raise ValueError(f"cover_file must be inside the project folder: {meta['cover_file']}")
     # exif_transpose: phone photos store their rotation separately, and would otherwise come out sideways
     img = ImageOps.exif_transpose(Image.open(path)).convert("RGB")
     return img.resize((round(img.width * height / img.height), height), Image.LANCZOS) if img.height > height else img

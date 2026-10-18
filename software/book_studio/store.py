@@ -88,6 +88,9 @@ def meta_for(book: Book, builtin: dict) -> dict:
     """The book_meta.json entry for one book: built-in settings, then the user's fixes, title, cover and copyright on top."""
     meta = dict(builtin.get(book.id) or {"layout": "prose", "credits": []})
     meta.update({k: v for k, v in book.fixes.items() if k != "kind"})
+    # The cover is only ever the picture the volunteer chose here: a cover_file in imported settings or fixes could point at
+    # any file on this computer and slip it into a PDF that gets shared
+    meta.pop("cover_file", None)
     meta.update(title=book.title or meta.get("title") or book.id, subtitle=book.subtitle, author=book.author)
     meta.setdefault("credits", [])
     meta.setdefault("layout", "prose")
