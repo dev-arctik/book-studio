@@ -140,6 +140,7 @@ class BookRow(QFrame):
         self.bar.setFixedHeight(8)
         self.detail = QLabel()
         self.detail.setObjectName("Hint")
+        self.detail.setWordWrap(True)  # "made 18 Oct, 10:13 · PDF 4 MB · EPUB 6 MB" can need two lines
         right.addWidget(self.status)
         right.addWidget(self.bar)
         right.addWidget(self.detail)

@@ -46,6 +46,15 @@ def fmt_duration(seconds: float) -> str:
     return f"{minutes // 60} h {minutes % 60:02d} min" if minutes >= 60 else f"{max(minutes, 1)} min"
 
 
+def fmt_size(path: str | Path) -> str:
+    """'19 MB' / '850 KB' for a file, '' if it's missing."""
+    try:
+        n = Path(path).stat().st_size
+    except (OSError, TypeError):
+        return ""
+    return f"{n / 1e6:,.0f} MB" if n >= 1e6 else f"{max(1, round(n / 1e3))} KB"
+
+
 def fmt_clock(seconds: float) -> str:
     s = max(0, int(seconds))
     return f"{s // 3600}:{s % 3600 // 60:02d}:{s % 60:02d}" if s >= 3600 else f"{s // 60}:{s % 60:02d}"
@@ -388,7 +397,8 @@ class MainWindow(QMainWindow):
 
     def row_state(self, b: store.Book) -> RowState:
         read = store.ocr_pages_done(b)
-        sub = " · ".join(x for x in (b.author, f"{b.pages} pages", "digital PDF" if b.kind == "digital" else "") if x)
+        scan_size = fmt_size(paths.WORK_DIR / "books" / f"{b.id}.pdf")
+        sub = " · ".join(x for x in (b.author, f"{b.pages} pages", scan_size, "digital PDF" if b.kind == "digital" else "") if x)
         st = RowState(title=b.title, subtitle=sub, thumb=self.thumbnail(b), ticked=b.ticked, steps=self.steps_of(b),
                       status="", colour=style.MUTED, busy=b.id == self.current or b.id in self.queue,
                       can_open=(bool(b.pdf) and Path(b.pdf).exists(), bool(b.epub) and Path(b.epub).exists()))
@@ -421,7 +431,8 @@ class MainWindow(QMainWindow):
             st.detail = "open ⋯ → Check book to see why"
         elif self.is_ready(b):
             st.status, st.colour = "Ready ✓", style.OK
-            st.detail = f"made {datetime.fromisoformat(b.built):%d %b, %H:%M}"
+            made = [f"{kind} {size}" for kind, size in (("PDF", fmt_size(b.pdf)), ("EPUB", fmt_size(b.epub))) if size]
+            st.detail = " · ".join([f"made {datetime.fromisoformat(b.built):%d %b, %H:%M}"] + made)
         elif b.built:
             st.status, st.colour = "Changed — make it again", style.WARN
             st.detail = "takes a moment, no reading again"
