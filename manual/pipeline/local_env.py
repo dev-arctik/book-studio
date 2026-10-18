@@ -26,19 +26,22 @@ def _take_option(flag: str) -> str | None:
 
 # Code and books live apart: this file sits in <repo>/manual/pipeline/; books, OCR work, tools and the model live in a library
 # folder outside the public repo, given explicitly. Book Studio uses its own per-computer data folder (BOOK_STUDIO_DATA).
-# The layout inside is the same in all cases: books/ (originals, final), output/<book>/, tools/, .cache/, book_meta.json.
+# Inside: book_meta.json, books/ (originals, final) and output/<book>/ — the working files of a book being made.
 PIPELINE_DIR = Path(__file__).resolve().parent
 _library = os.environ.get("BOOK_STUDIO_DATA") or _take_option("--library") or os.environ.get("BOOK_LIBRARY")
 if not _library:
-    sys.exit(f"Which library folder? Give it with --library (the folder with books/, output/, tools/, book_meta.json).\n{USAGE}")
+    sys.exit(f"Which library folder? Give it with --library (the folder with books/ and book_meta.json).\n{USAGE}")
 PROJECT_ROOT = Path(_library).expanduser().resolve()
 if not PROJECT_ROOT.is_dir():
     sys.exit(f"The library folder doesn't exist: {PROJECT_ROOT}")
 BOOKS_DIR = PROJECT_ROOT / "books"
 OUTPUT_DIR = PROJECT_ROOT / "output"
-TOOLS_DIR = PROJECT_ROOT / "tools"
+# Software (llama-server, fonts, the OCR model) is not a book: run by hand it lives with the code in the repo (git-ignored);
+# Book Studio keeps its own copy in its data folder
+SOFTWARE_ROOT = Path(os.environ["BOOK_STUDIO_DATA"]) if os.environ.get("BOOK_STUDIO_DATA") else PIPELINE_DIR.parent.parent
+TOOLS_DIR = SOFTWARE_ROOT / "tools"
 FONTS_DIR = Path(os.environ.get("BOOK_STUDIO_FONTS") or TOOLS_DIR / "fonts")
-CACHE_DIR = PROJECT_ROOT / ".cache"
+CACHE_DIR = SOFTWARE_ROOT / ".cache"
 # Per-book settings; Book Studio writes its own merged copy (built-in settings + what the user edited in the app)
 META_FILE = Path(os.environ.get("BOOK_META_FILE") or PROJECT_ROOT / "book_meta.json")
 FINAL_DIR = Path(os.environ.get("BOOK_STUDIO_FINAL") or BOOKS_DIR / "final")

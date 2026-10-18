@@ -14,7 +14,7 @@ The book's **file name** (without `.pdf`) is its key: `without-fear.pdf` → `ou
 
 ## The library folder
 
-Code and books live apart. The library sits outside the repo (here: `../book-library`, next to it) and holds everything about the books:
+Code and books live apart. The library sits outside the repo (here: `../book-library`, next to it) and holds only the books and their settings:
 
 ```
 book-library/                  never in git
@@ -23,9 +23,9 @@ book-library/                  never in git
 │   ├── originals/             the scans as received
 │   ├── final/                 finished books, one folder per format: pdf/, epub/, word/
 │   └── STATUS.md              which books are done
-├── output/<book>/             work per book: 1-ocr/ (keep — hours of OCR), 2-assembled/ (book.json + report.txt), 3-clean-pdf/, logs/
-├── tools/                     llama-server (runs the OCR model) and the Gentium Book Plus font
-└── .cache/                    the OCR model (Hugging Face cache)
+└── output/<book>/             appears while a book is being made: 1-ocr/ (the pages read — hours of work), 2-assembled/
+                               (book.json + report.txt), 3-clean-pdf/. Keep it while you may still fix the book; delete
+                               it once the book is final (changing it later means reading all its pages again).
 ```
 
 The book's PDF can be anywhere (e.g. `~/Downloads/new-book.pdf`); keeping the scans in `books/originals/` makes rebuilding easy. Book Studio uses the same layout inside its own data folder.
@@ -89,8 +89,8 @@ book-studio/                   the git repo: code and docs only
 ├── manual/pipeline/           the scripts and book_template.typ
 ├── software/                  Book Studio (see software/README.md)
 ├── pyproject.toml             packages for the manual pipeline (Poetry; .venv/ in the repo, git-ignored)
-├── tools/uv                   uv, for Book Studio's environment (git-ignored)
-└── .cache/                    Poetry, uv and Book Studio's dev environment (git-ignored)
+├── tools/                     llama-server (runs the OCR model), Gentium fonts, uv (git-ignored)
+└── .cache/                    the OCR model (huggingface/), Poetry, uv and Book Studio's dev environment (git-ignored)
 ```
 
-Nothing is installed globally. Tip: in Finder, press `Cmd + Shift + .` to show hidden folders.
+Software lives with the code, books with the library. Nothing is installed globally. Tip: in Finder, press `Cmd + Shift + .` to show hidden folders.
