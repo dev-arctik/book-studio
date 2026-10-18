@@ -9,6 +9,7 @@ import sys; sys.dont_write_bytecode = True  # keep pipeline/ free of __pycache__
 import local_env  # noqa: F401  (must run before surya import to pin caches locally)
 
 import json
+import os
 import re
 import time
 from contextlib import contextmanager
@@ -42,9 +43,25 @@ def ocr_predictor():
         manager.stop()
 
 
+def save_page(path: Path, data: dict) -> None:
+    """All or nothing: written to page-NNN.json.tmp, then renamed — a power cut mid-write leaves no half-written page behind."""
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def page_done(path: Path) -> bool:
+    """A saved page that opens cleanly; anything else (missing, empty, damaged by a crash) is read again."""
+    try:
+        return "blocks" in json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+
+
 def ocr_all(pdf_path: Path, out_dir: Path, first: int, last: int, after_chunk=None):
-    """after_chunk(pages) runs once each batch is saved — Book Studio uses it for progress, Pause and cool-down rests."""
-    todo = [n for n in range(first, last + 1) if not (out_dir / f"page-{n:03d}.json").exists()]
+    """after_chunk(pages) runs once each batch is saved — Book Studio uses it for progress, Pause and cool-down rests.
+    Resumable: pages already saved are skipped, so after a crash or power cut at most the batch in progress is read again."""
+    todo = [n for n in range(first, last + 1) if not page_done(out_dir / f"page-{n:03d}.json")]
     print(f"{pdf_path.name}: {last - first + 1} pages, {len(todo)} left to OCR", flush=True)
     if not todo:
         return
@@ -54,7 +71,7 @@ def ocr_all(pdf_path: Path, out_dir: Path, first: int, last: int, after_chunk=No
             chunk = todo[i : i + CHUNK_SIZE]
             results = predictor(render_pages(pdf_path, chunk), full_page=True)
             for n, page in zip(chunk, results):
-                (out_dir / f"page-{n:03d}.json").write_text(json.dumps(page.model_dump(), ensure_ascii=False), encoding="utf-8")
+                save_page(out_dir / f"page-{n:03d}.json", page.model_dump())
             done = i + len(chunk)
             per_page = (time.time() - start) / done
             print(f"[{done}/{len(todo)}] pages {chunk[0]}-{chunk[-1]} | {per_page:.1f}s/page | ~{per_page * (len(todo) - done) / 60:.0f} min left", flush=True)
@@ -83,7 +100,7 @@ def fix_blocks(pdf_path: Path, out_dir: Path, specs: list[str]):
         new_html = "\n".join(b.html for b in sorted(result.blocks, key=lambda b: b.reading_order) if b.html)
         block.setdefault("html_before_fix", block["html"])
         block["html"] = new_html
-        path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        save_page(path, data)
         strip = lambda h: re.sub(r"<[^>]+>", " ", h).split()
         print(f"{path.name}:\n  before: {' '.join(strip(block['html_before_fix']))[:160]}\n  after:  {' '.join(strip(new_html))[:160]}")
 
