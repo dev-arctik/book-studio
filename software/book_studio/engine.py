@@ -19,6 +19,10 @@ from . import paths
 from .store import Settings
 
 sys.path.insert(0, str(paths.PIPELINE_DIR))
+# The pipeline needs to know its folders before it is imported; inside Book Studio they are always the app's own
+paths.ensure_dirs()
+for _key, _value in paths.pipeline_env().items():
+    os.environ.setdefault(_key, _value)
 from local_env import find_llama_server  # noqa: E402  (shared with the manual pipeline)
 
 LLAMA_TAG = "b11623"  # the llama.cpp release the 13 finished books were OCR'd with
