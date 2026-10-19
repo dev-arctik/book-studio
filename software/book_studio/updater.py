@@ -21,19 +21,27 @@ def _version(tag: str) -> tuple[int, ...]:
         return (0,)
 
 
-def latest_release() -> dict | None:
-    """The newest release if it is newer than this copy, else None. Errors (offline, rate limit) also give None."""
+def check() -> tuple[str, dict | None]:
+    """Asks GitHub for the newest release: ("newer", release), ("current", newest) or ("offline", None) when it can't tell."""
     request = urllib.request.Request(f"https://api.github.com/repos/{UPDATE_REPO}/releases/latest",
                                      headers={"User-Agent": "BookStudio", "Accept": "application/vnd.github+json"})
     try:
         with urllib.request.urlopen(request, timeout=10) as response:
             release = json.load(response)
     except (OSError, ValueError):
-        return None
+        return "offline", None
     asset = next((a for a in release.get("assets", []) if a["name"].startswith("BookStudio-") and a["name"].endswith(".zip")), None)
+    info = {"version": release.get("tag_name", "").lstrip("vV"), "notes": release.get("body") or "",
+            "url": asset["browser_download_url"] if asset else "", "page": release.get("html_url", "")}
     if not asset or _version(release.get("tag_name", "")) <= _version(__version__):
-        return None
-    return {"version": release["tag_name"].lstrip("vV"), "notes": release.get("body") or "", "url": asset["browser_download_url"]}
+        return "current", info
+    return "newer", info
+
+
+def latest_release() -> dict | None:
+    """The newest release if it is newer than this copy, else None (also when offline) — the quiet check on opening."""
+    status, info = check()
+    return info if status == "newer" else None
 
 
 def prepare(release: dict, progress: Progress) -> None:

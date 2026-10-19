@@ -13,7 +13,7 @@ from PySide6.QtCore import Qt, QThread, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QImage, QPixmap
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QGroupBox,
                                QHBoxLayout, QLabel, QLineEdit, QListWidget, QMessageBox, QPlainTextEdit, QProgressBar,
-                               QPushButton, QScrollArea, QSlider, QSpinBox, QSplitter, QTabWidget, QVBoxLayout, QWidget)
+                               QPushButton, QScrollArea, QSlider, QSpinBox, QSplitter, QTabWidget, QTextBrowser, QVBoxLayout, QWidget)
 
 from .. import __version__, engine, paths, store, updater
 
@@ -588,8 +588,11 @@ def offer_update(parent, release: dict) -> bool:
     box.addButton("Not now", QMessageBox.RejectRole)
     box.setDefaultButton(now)
     box.exec()
-    if box.clickedButton() is not now:
-        return False
+    return box.clickedButton() is now and install_update(parent, release)
+
+
+def install_update(parent, release: dict) -> bool:
+    """Downloads and stages the update; True when the app should quit so the launcher swaps it in and reopens Book Studio."""
     if not paths.IS_INSTALLED:
         QMessageBox.information(parent, "Update", "This copy runs from the source code — update it with git instead.")
         return False
@@ -614,3 +617,99 @@ def offer_update(parent, release: dict) -> bool:
         updater.apply_and_restart()
         return True
     return False
+
+
+class UpdatesDialog(QDialog):
+    """Toolbar → Check for updates: this copy's version, whether a newer one exists (what's new, Update now), and a few
+    details worth knowing when asking for help (page reader, folders)."""
+
+    def __init__(self, settings: store.Settings, busy: bool, parent=None):
+        super().__init__(parent)
+        self.busy, self.release, self.restart = busy, None, False
+        self.setWindowTitle("Book Studio — updates")
+        self.setMinimumWidth(560)
+        lay = QVBoxLayout(self)
+        head = QHBoxLayout()
+        icon = QLabel()
+        icon.setPixmap(QPixmap(str(paths.ASSETS_DIR / "icon.png")).scaled(64, 64, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        head.addWidget(icon)
+        title = QLabel(f"<span style='font-size:20px'><b>Book Studio {__version__}</b></span><br>"
+                       "<span style='color:#6b6158'>Clean PDFs and e-books from scanned books, made on this computer.</span>")
+        title.setTextFormat(Qt.RichText)
+        head.addWidget(title, 1)
+        lay.addLayout(head)
+
+        self.status = QLabel()
+        self.status.setTextFormat(Qt.RichText)
+        self.status.setWordWrap(True)
+        self.status.setStyleSheet("font-size: 15px; padding: 6px 0;")
+        lay.addWidget(self.status)
+        self.notes = QTextBrowser()  # release notes are written in Markdown on GitHub
+        self.notes.setOpenExternalLinks(True)
+        self.notes.setMaximumHeight(220)
+        self.notes.hide()
+        lay.addWidget(self.notes)
+        row = QHBoxLayout()
+        self.update_btn = QPushButton("Update now")
+        self.update_btn.setObjectName("Primary")
+        self.update_btn.clicked.connect(self._update)
+        self.retry_btn = QPushButton("Check again")
+        self.retry_btn.clicked.connect(self.check)
+        self.page_btn = QPushButton("What's new on GitHub")
+        self.page_btn.setObjectName("Link")
+        self.page_btn.clicked.connect(lambda: self.release and QDesktopServices.openUrl(QUrl(self.release.get("page", ""))))
+        for w in (self.update_btn, self.retry_btn, self.page_btn):
+            row.addWidget(w)
+            w.hide()
+        row.addStretch()
+        lay.addLayout(row)
+
+        about = QGroupBox("This computer")
+        form = QFormLayout(about)
+        form.addRow("Page reader", QLabel(engine.engine_label(settings.engine)))
+        form.addRow("Finished PDFs", QLabel(str(settings.pdf_folder())))
+        form.addRow("Finished EPUBs", QLabel(str(settings.epub_folder())))
+        data = QPushButton(str(paths.DATA_DIR))
+        data.setObjectName("Link")
+        data.setToolTip("Open the folder with Book Studio's books, settings, logs and reading model")
+        data.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(paths.DATA_DIR))))
+        form.addRow("Data folder", data)
+        lay.addWidget(about)
+        close = QDialogButtonBox(QDialogButtonBox.Close)
+        close.rejected.connect(self.reject)
+        lay.addWidget(close)
+        self.check()
+
+    def check(self):
+        self.status.setText("Checking for updates…")
+        for w in (self.update_btn, self.retry_btn, self.page_btn, self.notes):
+            w.hide()
+        self._task = Task(lambda progress: updater.check(), parent=self)
+        self._task.succeeded.connect(self._show)
+        self._task.start()
+
+    def _show(self, result):
+        status, self.release = result
+        if status == "offline":
+            self.status.setText("⚠️ Couldn't check for updates — is the internet on?")
+            self.retry_btn.show()
+            return
+        self.page_btn.setVisible(bool(self.release and self.release.get("page")))
+        if status == "current":
+            self.status.setText(f"<span style='color:#2f7d4f'>✅ <b>You have the newest version.</b></span>")
+            return
+        self.status.setText(f"<b>Book Studio {self.release['version']} is available</b> — you have {__version__}. "
+                            "Your books, settings and the pages already read are kept.")
+        if self.release["notes"]:
+            self.notes.setMarkdown(self.release["notes"])
+            self.notes.show()
+        self.update_btn.show()
+        self.update_btn.setEnabled(not self.busy)
+        if self.busy:
+            self.update_btn.setToolTip("Stop or finish the book being made first")
+            self.status.setText(self.status.text() + "<br><i>Stop or finish the book being made first, then update.</i>")
+
+    def _update(self):
+        if install_update(self, self.release):
+            self.restart = True
+            self.accept()

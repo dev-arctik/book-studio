@@ -24,7 +24,7 @@ from .. import APP_NAME, engine, paths, store, updater
 from . import style
 from .book_list import BookList, RowState
 from .book_panel import BookPanel
-from .dialogs import CheckDialog, FixesDialog, OutputDialog, SettingsDialog, SetupDialog, Task, offer_update
+from .dialogs import CheckDialog, FixesDialog, OutputDialog, SettingsDialog, SetupDialog, Task, UpdatesDialog, offer_update
 from power import LOW_BATTERY, battery  # noqa: E402  (manual/pipeline/power.py, shared with the worker)
 
 SCAN_STEPS = ["Read", "Chapters", "PDF", "EPUB"]
@@ -181,10 +181,12 @@ class MainWindow(QMainWindow):
         open_menu.addAction("EPUB folder", lambda: self.open_folder(self.settings.epub_folder()))
         self.open_btn.setMenu(open_menu)
         self.folders_btn = self._tool("Output folders…", self.show_output_folders)
+        self.updates_btn = self._tool("Check for updates", self.show_updates)
         self.settings_btn = self._tool("Settings", self.show_settings)
         for b in (self.add_btn, self.open_btn, self.folders_btn):
             h.addWidget(b)
         h.addStretch()
+        h.addWidget(self.updates_btn)
         h.addWidget(self.settings_btn)
         return bar
 
@@ -709,7 +711,7 @@ class MainWindow(QMainWindow):
     def show_settings(self):
         dlg = SettingsDialog(self.settings, self)
         dlg.redoSetup.connect(self.redo_setup)
-        dlg.checkUpdates.connect(lambda: self.check_updates(quiet=False))
+        dlg.checkUpdates.connect(self.show_updates)
         if dlg.exec():
             self.library.write_meta()  # imported book settings may change books
             self.panel.fixes.setVisible(self.settings.expert)
@@ -734,6 +736,12 @@ class MainWindow(QMainWindow):
     def open_folder(self, folder: Path):
         folder.mkdir(parents=True, exist_ok=True)
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+
+    def show_updates(self):
+        dlg = UpdatesDialog(self.settings, busy=self.runner is not None or bool(self.between_until), parent=self)
+        dlg.exec()
+        if dlg.restart:
+            QApplication.quit()
 
     def show_output_folders(self):
         OutputDialog(self.settings, self).exec()
