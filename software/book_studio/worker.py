@@ -101,6 +101,8 @@ def pymupdf_usable() -> bool:
 
 
 FRIENDLY = {
+    "open": "Book Studio couldn't open this PDF. Is it complete and undamaged? Check book → Open log has the details for Devansh.",
+    "load": "A part of Book Studio couldn't be loaded on this computer. Please send the log (Check book → Open log) to Devansh.",
     "starting": "The page reader could not start. Try Settings → 'Set up the page reader again', or restart the computer.",
     "ocr": "Reading the pages stopped unexpectedly. The pages already read are saved — press Make ticked books to continue.",
     "assemble": "Book Studio could not work out this book's chapters by itself. Open Check book to see what it found, or send the book to Devansh.",
@@ -117,7 +119,7 @@ def make_book(book_id: str) -> None:
 
     pdf = local_env.find_book(book_id)
     meta = json.loads(local_env.META_FILE.read_text(encoding="utf-8"))[book_id]
-    stage = "starting"
+    stage = "open"
     try:
         digital = is_digital(book, pdf) and pymupdf_usable()
         emit("kind", kind="digital" if digital else "scanned")
@@ -128,7 +130,10 @@ def make_book(book_id: str) -> None:
 
             pdf_to_book.convert(str(pdf))
         else:
+            stage = "load"
             import ocr_book  # loads Surya (and PyTorch) — a few seconds
+
+            stage = "starting"
 
             ocr_dir = local_env.stage_dir(book_id, "ocr")
             done = lambda: sum(1 for _ in ocr_dir.glob("page-*.json"))  # noqa: E731
@@ -187,7 +192,11 @@ def make_book(book_id: str) -> None:
         emit("stopped")
     except Exception as exc:  # noqa: BLE001 — every failure must reach the window as a readable message
         traceback.print_exc()
-        emit("error", stage=stage, message=FRIENDLY.get(stage, str(exc)), detail=f"{type(exc).__name__}: {exc}")
+        message = FRIENDLY.get(stage, str(exc))
+        if "Application Control" in str(exc) or "Application Control" in str(exc.__context__ or ""):  # Windows Smart App Control
+            message = ("Windows blocked a part of Book Studio (Smart App Control: 'Part of this app has been blocked'). "
+                       "Please send the log (Check book → Open log) to Devansh.")
+        emit("error", stage=stage, message=message, detail=f"{type(exc).__name__}: {exc}")
 
 
 def main() -> None:

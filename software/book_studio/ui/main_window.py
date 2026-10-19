@@ -873,8 +873,11 @@ class MainWindow(QMainWindow):
         elif finished and not self.stop_requested:
             QApplication.alert(self)
             failed = [i for i in self.run_ids if i not in self.run_done]
-            self.finished_note = (f"Done — {len(self.run_done)} book{'s' if len(self.run_done) != 1 else ''} made ✓" +
-                                  (f", {len(failed)} need{'s' if len(failed) == 1 else ''} attention" if failed else ""))
+            if not self.run_done:
+                self.finished_note = "None of the books could be made — open ⋯ → Check book on one to see why"
+            else:
+                self.finished_note = (f"Done — {len(self.run_done)} book{'s' if len(self.run_done) != 1 else ''} made ✓" +
+                                      (f", {len(failed)} need{'s' if len(failed) == 1 else ''} attention" if failed else ""))
         self._refresh_all()
 
     def toggle_pause(self):
