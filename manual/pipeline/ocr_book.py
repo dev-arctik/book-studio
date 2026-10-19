@@ -17,9 +17,13 @@ from pathlib import Path
 
 import pypdfium2 as pdfium
 
+import no_torch
 import power
 
-from surya.inference import SuryaInferenceManager
+if no_torch.needed():  # PyTorch blocked or not installed: Surya's llama-server OCR doesn't need it
+    no_torch.install()
+
+from surya.inference import SuryaInferenceManager  # noqa: E402
 from surya.recognition import RecognitionPredictor
 
 RENDER_DPI = 192  # matches Surya's IMAGE_DPI_HIGHRES, the resolution its recognizer expects

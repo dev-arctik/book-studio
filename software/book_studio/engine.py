@@ -164,6 +164,7 @@ def worker_env(settings: Settings) -> dict:
     server = llama_server()
     if server:
         env["LLAMA_CPP_BINARY"] = str(server)
+    env["SURYA_WITHOUT_TORCH"] = "1"  # OCR runs in llama-server; PyTorch is never loaded (Windows Smart App Control blocks it)
     env["HF_HUB_OFFLINE"] = "1"  # the model is already on disk: never reach for the internet while working on books
     env["PYTHONIOENCODING"] = "utf-8"  # diacritics in log lines on Windows consoles
     return env

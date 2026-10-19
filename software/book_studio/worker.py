@@ -163,6 +163,11 @@ def make_book(book_id: str) -> None:
             sys.argv = ["assemble", str(pdf)]  # the pipeline takes the PDF's path, as on the command line
             (assemble_verses if meta["layout"] == "verses" else assemble_prose).main()
 
+        # No chapters found (no readable contents page, an excerpt…): say so here, rather than failing later in the PDF step
+        assembled = json.loads((local_env.stage_dir(book_id, "assembled") / "book.json").read_text(encoding="utf-8"))
+        if not (assembled.get("sections") or assembled.get("chapters")):
+            raise RuntimeError("no chapters found in this book")
+
         # Read the settings again: a title, cover or copyright choice changed while the pages were being read applies now
         meta = json.loads(local_env.META_FILE.read_text(encoding="utf-8"))[book_id]
         # Finished books: PDFs and e-books each in the folder chosen for them

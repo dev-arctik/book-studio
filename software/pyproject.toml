@@ -4,7 +4,7 @@
 
 [project]
 name = "book-studio"
-version = "0.1.1"
+version = "0.1.2"
 description = "Turns scanned ISKCON books into clean PDFs and EPUBs, fully offline"
 requires-python = ">=3.12,<3.13"
 dependencies = [
@@ -13,19 +13,12 @@ dependencies = [
     "typst (==0.15.0)",
     "pymupdf (>=1.28.2,<2.0.0)",
     "opencv-python-headless (==4.11.0.86)",
-    "torch (==2.14.1)",  # listed directly so the Linux CPU-only source below applies
     "psutil (>=7,<8)",  # battery level, so making books pauses before a laptop runs flat
 ]
 
 [tool.uv]
 package = false
-
-# Linux would otherwise get PyTorch with NVIDIA libraries (~2.5 GB); OCR runs in llama-server, so the CPU build is enough.
-# Windows and Mac wheels on PyPI are already CPU/Metal-only.
-[tool.uv.sources]
-torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
-
-[[tool.uv.index]]
-name = "pytorch-cpu"
-url = "https://download.pytorch.org/whl/cpu"
-explicit = true
+# PyTorch is left out: Surya lists it, but Book Studio's OCR runs in llama-server, and Surya only asks PyTorch which GPU its own
+# local models would use — manual/pipeline/no_torch.py answers that instead. PyTorch's unsigned DLLs are blocked by Windows
+# Smart App Control, and leaving it out saves ~540 MB per install. (An override that can never apply removes the package.)
+override-dependencies = ["torch ; sys_platform == 'never'", "torchvision ; sys_platform == 'never'"]
