@@ -53,7 +53,7 @@ The desktop app runs `manual/pipeline` **unchanged**, pointed at its own data fo
 - The page reader is **not perfectly repeatable**: with 4 parallel slots, two runs of the same pages can differ in a word or the order/label of blocks on busy photo pages. When comparing OCR runs, compare against a second run of the baseline, not just one.
 - Windows Smart App Control can block unsigned DLLs; it blocked PyMuPDF's `_mupdf.pyd` and PyTorch (not llama-server, PySide6, pypdfium2, OpenCV, Typst, numpy, Pillow, psutil). So the app reads metadata and decides scan vs digital with **pypdfium2**; a digital PDF on a computer where PyMuPDF won't load is read with OCR instead (`worker.pymupdf_usable()`).
 - Crash-safe OCR: `ocr_book.save_page()` writes page-NNN.json.tmp then renames it (a power cut never leaves a half-written page), and resuming re-reads any page that doesn't open (`page_done()`); tested by killing OCR and llama-server mid-run — only the batch in progress (≤4 pages) is read again.
-- Power (`manual/pipeline/power.py`, shared by the worker and run_book/ocr_book): `keep_awake()` holds off system sleep for the whole book (Mac `caffeinate -i -w <pid>`, Windows SetThreadExecutionState, Linux systemd-inhibit); `wait_for_power()` pauses between OCR batches on battery below 15 % until plugged in or 20 % (psutil). The window shows a power line while working and a reminder when a run starts on battery.
+- Power (`manual/pipeline/power.py`, shared by the worker and run_book/ocr_book): `keep_awake()` holds off system sleep (Mac `caffeinate -i -w <pid>`, Windows SetThreadExecutionState, Linux systemd-inhibit) — in the worker for the book, and in Book Studio's window for the whole run, because no worker runs during the rest between books (a Windows laptop slept there, 2026-10-19); `wait_for_power()` pauses between OCR batches on battery below 15 % until plugged in or 20 % (psutil). The window shows a power line while working and a reminder when a run starts on battery.
 - On opening, the app checks for updates first ("There is an update — do you want to update now?"), then setup. Book settings are re-read by the worker just before the PDF and the build is fingerprinted at the typeset stage, so edits made while pages are read go into that build.
 - Windows: tested on an ASUS laptop (Windows 11, 2026-10-19) — install, model download and the Start-menu icon work. Pitfalls seen: a zip that isn't Unblocked before extracting makes the .bat refuse to run; "Run as administrator" plus an unfinished setup left the app not opening (normal start works). Start-up failures now show a message box + logs/startup.log (pythonw has no console). Linux is still untested.
 
@@ -100,6 +100,7 @@ The desktop app runs `manual/pipeline` **unchanged**, pointed at its own data fo
 - `block()` without `width: 100%` shrinks to its content, so "centred" text hugs the left margin.
 - Gentium lacks `✦` (falls back to a math font) — the ornament is drawn with shapes.
 - Typst only reads files under the project root, hence the temporary `.build/` folder.
+- Paths passed to Typst must use `/` — on Windows `str(path)` has backslashes and Typst refuses them ("path must not contain a backslash"); build them with `typeset_book.typst_path()`.
 
 ## Remaining books (in the library's `books/originals/`, which also keeps the scans of finished books)
 

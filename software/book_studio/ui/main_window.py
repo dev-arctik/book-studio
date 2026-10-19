@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import time
+from contextlib import ExitStack
 from datetime import datetime
 from pathlib import Path
 
@@ -25,7 +26,7 @@ from . import style
 from .book_list import BookList, RowState
 from .book_panel import BookPanel
 from .dialogs import CheckDialog, FixesDialog, OutputDialog, SettingsDialog, SetupDialog, Task, UpdatesDialog, offer_update
-from power import LOW_BATTERY, battery  # noqa: E402  (manual/pipeline/power.py, shared with the worker)
+from power import LOW_BATTERY, battery, keep_awake  # noqa: E402  (manual/pipeline/power.py, shared with the worker)
 
 SCAN_STEPS = ["Read", "Chapters", "PDF", "EPUB"]
 DIGITAL_STEPS = ["Text", "PDF", "EPUB"]
@@ -116,6 +117,7 @@ class MainWindow(QMainWindow):
         self.finished_note = ""
         self.battery_pct = 0  # battery % when reading paused for low battery
         self.power_seen = 0.0  # when the power line was last refreshed
+        self.awake: ExitStack | None = None  # holds off sleep for the whole run, rests between books included
         self.selected: str | None = None  # the book shown in the details panel
         self.thumbs: dict[str, QPixmap] = {}
 
@@ -593,6 +595,7 @@ class MainWindow(QMainWindow):
     def _tick(self):
         if self.between_until and time.monotonic() >= self.between_until:
             self.start_next()
+        self._hold_awake(self.runner is not None or bool(self.between_until))
         if time.monotonic() - self.power_seen > 10:
             self.power_seen = time.monotonic()
             self._refresh_power()
@@ -600,6 +603,16 @@ class MainWindow(QMainWindow):
             if self.current:
                 self._refresh_row(self.library.get(self.current))
             self._refresh_run_card()
+
+    def _hold_awake(self, on: bool):
+        """The worker keeps the computer awake only while it makes a book; in the rest between books no worker runs, and a
+        sleeping laptop would stop the whole run until someone wakes it — so the window holds it awake from start to finish."""
+        if on and self.awake is None:
+            self.awake = ExitStack()
+            self.awake.enter_context(keep_awake())
+        elif not on and self.awake is not None:
+            self.awake.close()
+            self.awake = None
 
     def _refresh_power(self):
         """While books are being made: plugged in (keep the lid open) or on battery (plug in; pauses below 15 %)."""
@@ -950,4 +963,5 @@ class MainWindow(QMainWindow):
             self.runner.kill()
             self.runner.wait(5000)
             engine.stop_stray_server()
+        self._hold_awake(False)
         e.accept()

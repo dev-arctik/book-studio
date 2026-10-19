@@ -61,6 +61,11 @@ def split_signature(paragraphs: list[str]) -> tuple[list[str], str]:
     return paragraphs, ""
 
 
+def typst_path(path: Path) -> str:
+    """A file's path as Typst wants it: from the project root, with forward slashes even on Windows (Typst refuses backslashes)."""
+    return "/" + path.relative_to(local_env.PROJECT_ROOT).as_posix()
+
+
 class FigureCropper:
     """Crops each figure out of the scan into the temporary build folder and hands the template its path and shape."""
 
@@ -74,7 +79,7 @@ class FigureCropper:
         figure = figure or crop_figure(self.pdf, b["page"], b["bbox"], b["image_bbox"])
         path = self.build_dir / f"figure-{self.count:03d}.jpg"
         figure.save(path, quality=78, optimize=True)
-        return {"path": "/" + str(path.relative_to(local_env.PROJECT_ROOT)), "aspect": figure.height / figure.width,
+        return {"path": typst_path(path), "aspect": figure.height / figure.width,
                 "caption": to_segments(b["caption"]) if b["caption"] else []}
 
 
@@ -205,7 +210,7 @@ def build_typst_data(book: str, build_dir: Path) -> dict:
     cover = book_cover(local_env.find_book(book), meta)
     cover_path = build_dir / "cover.jpg"
     cover.save(cover_path, quality=85, optimize=True)
-    cover_data = {"path": "/" + str(cover_path.relative_to(local_env.PROJECT_ROOT)), "aspect": cover.height / cover.width}
+    cover_data = {"path": typst_path(cover_path), "aspect": cover.height / cover.width}
     frontispiece = front_figures(book, first_text_page(book, assembled), figures, set(meta.get("frontispiece_skip", [])))
     front, chapters = (from_prose_book if meta["layout"] == "prose" else from_verses_book)(assembled, figures)
     copyright_lines = copyright_page(book, first_text_page(book, assembled)) if meta.get("keep_copyright") else None
@@ -221,7 +226,7 @@ def render(book: str, output: Path) -> None:
     try:
         data_path = build_dir / "typst-data.json"
         data_path.write_text(json.dumps(build_typst_data(book, build_dir), ensure_ascii=False), encoding="utf-8")
-        inputs = {"data": "/" + str(data_path.relative_to(local_env.PROJECT_ROOT))}  # Typst paths are relative to root
+        inputs = {"data": typst_path(data_path)}  # Typst paths are relative to root
         # ignore_system_fonts: the PDF must look identical on any machine, so only the bundled font is allowed
         # A copy beside the data: Typst only reads files under its root, and Book Studio's root is its own data folder
         template = shutil.copy(TEMPLATE, build_dir / TEMPLATE.name)
