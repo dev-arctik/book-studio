@@ -4,7 +4,7 @@
 
 A desktop window around the `manual/` pipeline, so volunteers can turn scanned books into the same clean PDF + EPUB on their own computer — Mac, Windows or Linux, fully offline after the first start. Handed out as **one zip**; it installs itself into its own folder and updates itself from GitHub Releases.
 
-Status: **v0.1.0 built.** Tested on the M4 Mac: setup (page reader + model), real OCR, chapters, PDF and EPUB identical to the manual pipeline's, the window offscreen. Windows and Linux launchers are written but untested on real machines.
+Status: **shelved (2026-10-19)** — books are made with the manual pipeline supervised by Claude Code instead (see the root `CLAUDE.md`, "Where things stand"). Last release **v0.1.4**; tested on the M4 Mac and on a Windows 11 laptop (install, page reading, Smart App Control fixes). Committed after v0.1.4, unreleased: the chapter fallback + book map in `report.txt`, Copy report (`report.py`), "chapters need a look", and treating a PDF whose text is private-use codes as a scan. The app reads pages well; what it can't do on its own is work out the chapters of an unusual book. Linux untested.
 
 ## How volunteers use it
 

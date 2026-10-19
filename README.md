@@ -2,6 +2,8 @@
 
 **Turn scanned books into clean, readable PDFs and e-books — on your own computer, with a few clicks.**
 
+> **Paused (October 2026).** The app is not being developed further for now: it reads pages well, but unusual books still need a person to work out their chapters, so books are being made with the hand-run pipeline in `manual/` instead. The last release (v0.1.4) still works.
+
 Book Studio takes a scanned book (a PDF of page photos) and makes a fresh, cleanly set **PDF** and an **EPUB** e-book from it: real text you can search and copy, correct Sanskrit diacritics (ṣ ṇ ṁ ā ī ū ṛ …), the original photos and paintings kept, the book's own chapters with a clickable contents page, and the original cover. It also takes digital PDFs that already have text and gives them the same clean design.
 
 ## Why it exists

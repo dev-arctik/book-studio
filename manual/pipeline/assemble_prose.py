@@ -2,6 +2,8 @@
 # Stage 2 for prose books (layout "prose" in book_meta.json, e.g. Vraja-līlā): per-page OCR → sections → typed blocks.
 # Sections come from the book's own contents list, matched in order, so none can be missed or invented — including Parts, and index
 # sections that are dropped. Block types: paragraph, verse quote, source, signature, subheading, figure, scene break and endnote.
+# When the contents can't be matched (an unusual book), simpler ways are tried so the book is still made, and report.txt ends
+# with a book map — where the contents was read, the headings on the pages, each miss with its nearest heading — to tune it from.
 # Verse anthologies use assemble_verses.py instead.
 # Usage: poetry run python manual/pipeline/assemble_prose.py <path/to/book.pdf> --library <path/to/book-library>   → output/<book>/2-assembled/{book.json, report.txt}
 
@@ -49,6 +51,8 @@ NOTE_WINDOW = 3  # a mislabelled block counts as a footnote only if its number i
 LOOKAHEAD = 4  # contents entries to look ahead, so one heading the OCR garbled can't block every chapter after it
 FRONT_TITLES = {"preface", "foreword", "introduction", "dedication", "acknowledgments", "acknowledgements"}
 TITLE_MATCH_RATIO = 0.85
+CONTENTS_TRUST = 0.5  # below this share of contents entries found, the other ways of finding chapters are tried
+MAP_LIMIT = 150  # lines per list in the book map: enough to see the pattern, short enough to paste into a message
 
 
 @dataclass
@@ -286,17 +290,21 @@ def contents_rows(blocks, pages: list, plain_lines: bool = False) -> list[tuple[
     return rows
 
 
-def read_contents(blocks, keep: set = frozenset(), pages: list = None, subentries: bool = False) -> list[dict]:
+def read_contents(blocks, keep: set = frozenset(), pages: list = None, subentries: bool = False, info: dict | None = None) -> list[dict]:
     """The book's contents list. Table style (Tava Kathāmṛta): title and page on alternate lines of TableOfContents blocks.
     Line style (Vraja-līlā): the longest run of consecutive 'Title – page' lines.
-    'keep': titles that are sections even where they look like a chapter's sub-entries (Epilogue, Glossary…)."""
+    'keep': titles that are sections even where they look like a chapter's sub-entries (Epilogue, Glossary…).
+    'info' (optional) is filled with where the contents was read from, for the report's book map."""
+    info = {} if info is None else info
     table, label_page, pending_label, pending_title, in_chapter = [], "", "", "", False
     # The contents pages are the first run of pages holding contents tables; an index at the back looks the same
     toc_pages = sorted({b["page"] for b in blocks if b["label"] == "TableOfContents"})
     run = [p for i, p in enumerate(toc_pages) if p - toc_pages[0] <= i + 1]
     run = pages or run  # contents pages named in book_meta.json (a contents set as plain lines)
+    rows = contents_rows(blocks, run, plain_lines=bool(pages))
+    info.update(marked=toc_pages, pages=run, rows=len(rows), style="plain lines (contents_pages)" if pages else "contents table")
     # One row per entry keeps a title that wraps over two lines together
-    for raw0, cells in contents_rows(blocks, run, plain_lines=bool(pages)):
+    for raw0, cells in rows:
         raw = [raw0] if raw0 else []
         # "Chapter 1: On to India" with "August–October 1970" on the cell's second line: the date is the chapter's subtitle
         date = ""
@@ -362,6 +370,7 @@ def read_contents(blocks, keep: set = frozenset(), pages: list = None, subentrie
         table = table[:first] + [e for e in table[first:] if e.get("numeral")]
     if len(table) >= 5:
         return table
+    info.update(style="'Title – page' lines anywhere in the book (no usable contents table)", pages=[])
     best, run = [], []
     for b in blocks:
         m = TOC_LINE_RE.match(plain(b["text"]))
@@ -523,7 +532,8 @@ def assemble(blocks, contents, unnumbered: set, dropped: set, front_prefixes: tu
              inserted: list = None, opts: dict = None):
     opts = opts or {}
     sections, skipped_pages, k, skip, in_notes, part_label, full_pages, entry_page, waiting = [], set(), 0, 0, False, "", {}, 0, []
-    matched = set()
+    matched = {}  # contents entry → (page, heading) that matched it, for the book map
+    lookahead = opts.get("lookahead", LOOKAHEAD)
     extra = sorted(inserted or [], key=lambda x: x["page"])
     for i, blk in enumerate(blocks):
         if extra and blk["page"] >= extra[0]["page"]:
@@ -580,7 +590,7 @@ def assemble(blocks, contents, unnumbered: set, dropped: set, front_prefixes: tu
         # Next section from the contents list — its title may be split over two heading blocks ("Yavat" / "Part One",
         # "CHAPTER 1" / "THE GARDENER OF GOVARDHANA"). Look a few entries ahead in case one heading was garbled, and match
         # front sections (Foreword, Preface…) in any order — some books print them before the contents page.
-        candidates = [j for j in range(k, min(k + LOOKAHEAD, len(contents))) if j not in matched]
+        candidates = [j for j in range(k, min(k + lookahead, len(contents))) if j not in matched]
         candidates += [j for j, e in enumerate(contents) if j not in matched and j not in candidates
                        and section_kind(e, unnumbered, dropped, front_prefixes) == "front"]
         nxt = blocks[i + 1] if i + 1 < len(blocks) else None
@@ -596,7 +606,7 @@ def assemble(blocks, contents, unnumbered: set, dropped: set, front_prefixes: tu
         if hit:
             j, two = hit
             entry = contents[j]
-            matched.add(j)
+            matched[j] = (blk["page"], p)
             kind = section_kind(entry, unnumbered, dropped, front_prefixes)
             # All-capital headings ("ABOUT THE AUTHOR") read better in the contents' own spelling ("About the Author")
             title = entry["title"] or re.sub(r"\s+", " ", entry["match"] if p.isupper() else p)
@@ -687,7 +697,117 @@ def assemble(blocks, contents, unnumbered: set, dropped: set, front_prefixes: tu
                 s.blocks.append({"type": "notes-h", "text": "Notes"})
             s.blocks += [{"type": "note", "text": f} for f in s.footnotes]
     missed = [contents[j]["match"] for j in range(len(contents)) if j not in matched]
-    return sections, sorted(skipped_pages), missed
+    return sections, sorted(skipped_pages), missed, matched
+
+
+# How the chapters were found: the key goes into book.json (Book Studio marks the book "chapters need a look" unless it is
+# "contents"), the words into report.txt
+METHODS = {
+    "contents": "the book's contents page",
+    "skipping": "the book's contents page, skipping entries that weren't found (the contents didn't match well — check)",
+    "headings": "the headings on the pages — the contents page couldn't be matched (check the chapters)",
+    "whole": "nothing usable — the whole book is one section (no contents or headings could be matched)",
+}
+
+
+def headings_contents(blocks, skip_pages: set) -> list[dict]:
+    """A stand-in contents from the headings the reader found on the pages, in page order — for a book whose own contents
+    can't be matched. Running heads (the same heading on 3+ pages), labels ("CHAPTER 4") and page numbers are left out, and so
+    is everything up to the contents page (skip_pages: the title page's big title is not a chapter)."""
+    heads = [b for b in blocks if b["label"] == "SectionHeader" and b["page"] not in skip_pages]
+    count = Counter(ascii_key(plain(b["text"])) for b in heads)
+    out, seen = [], set()
+    for b in heads:
+        text = re.sub(r"\s+", " ", plain(b["text"])).strip()
+        key = ascii_key(text)
+        if len(key) < 3 or count[key] > 2 or key in seen or HEADING_LABEL_RE.match(text) or PAGE_NUMBER_RE.match(text):
+            continue
+        seen.add(key)
+        out.append({"match": text, "title": smart_title(text) if text.isupper() else text, "page": "", "hint": "chapter"})
+    return out
+
+
+def find_chapters(blocks, contents, opts, inserted, attempt, skip_pages: set, title: str):
+    """The book's own contents, matched in order (every finished book). If that finds under half of its entries — an
+    unusual book — simpler ways are tried in turn, so the book is still made and the report says which one was used.
+    attempt(contents, opts, inserted) runs assemble(). Returns (contents, opts, inserted, assemble's result, method)."""
+    found = lambda r: len(contents) - len(r[2])  # noqa: E731
+    result = attempt(contents, opts, inserted)
+    best = (contents, opts, inserted, result, "contents")
+    if contents and found(result) >= CONTENTS_TRUST * len(contents):
+        return best
+    if contents:  # a few garbled entries early on can block every entry after them: look past any number of them
+        wide = {**opts, "lookahead": len(contents)}
+        r = attempt(contents, wide, inserted)
+        if found(r) > found(result):
+            best = (contents, wide, inserted, r, "skipping")
+            if found(r) >= CONTENTS_TRUST * len(contents):
+                return best
+    heads = headings_contents(blocks, skip_pages)
+    if len(heads) >= 2:
+        r = attempt(heads, opts, inserted)
+        if len(r[0]) >= 2:
+            return heads, opts, inserted, r, "headings"
+    if best[3][0]:
+        return best[:4] + ("skipping" if best[4] == "contents" else best[4],)
+    first = min((b["page"] for b in blocks if b["page"] > 1), default=1)  # past the cover
+    whole = [{"title": title, "page": first, "kind": "chapter"}] + list(inserted)
+    return [], opts, whole, attempt([], opts, whole), "whole"
+
+
+def page_ranges(pages) -> str:
+    """[9, 10, 11, 14, 700, 701] → "9–11, 14, 700–701"."""
+    out, pages = [], sorted(set(pages))
+    for i, n in enumerate(pages):
+        if i and n == pages[i - 1] + 1:
+            out[-1][1] = n
+        else:
+            out.append([n, n])
+    return ", ".join(f"{a}–{b}" if a != b else str(a) for a, b in out)
+
+
+def book_map(blocks, contents, info: dict, matched: dict, method: str) -> list[str]:
+    """How the chapters were found, for tuning a book that came out wrong: what the reader labelled the blocks, where the
+    contents was read and what it lists (✓ found / ✗ not), the headings on the pages, and each miss with its nearest
+    heading. Titles and headings only — no book text. Lines are indented so Book Studio's report reader skips them."""
+    lines = ["", "Book map — how the chapters were found", f"  Chapters found by: {METHODS[method]}"]
+    lines.append("  Reader's labels: " + " · ".join(f"{k} {v}" for k, v in Counter(b["label"] for b in blocks).most_common()))
+    if info.get("marked"):
+        lines.append(f"  Pages marked as contents by the reader: {page_ranges(info['marked'])}")
+    used = set(info.get("pages") or [])
+    lines.append(f"  Contents read from: {info.get('style', '?')}" + (f", scan pages {page_ranges(used)}" if used else "")
+                 + (f" — {info['rows']} rows" if "rows" in info else "") + f" → {len(contents)} entries")
+    heads = [b for b in blocks if b["label"] == "SectionHeader" and b["page"] not in used]
+    head_texts = [re.sub(r"\s+", " ", plain(b["text"])).strip() for b in heads]
+    keys = [ascii_key(t) for t in head_texts]
+    entry_keys = [ascii_key(e["match"]) for e in contents]
+    near = lambda a, b: difflib.SequenceMatcher(None, a, b).ratio()  # noqa: E731
+    hits = {(pg, re.sub(r"\s+", " ", t).strip()) for pg, t in matched.values()}
+    for j, e in enumerate(contents[:MAP_LIMIT]):
+        hit = matched.get(j)
+        lines.append(f"    #{j + 1:<3} {'✓' if hit else '✗'} {e['match']}" + (f"  (p{e['page']})" if e.get("page") else "")
+                     + (f" → scan page {hit[0]}" if hit else ""))
+    if len(contents) > MAP_LIMIT:
+        lines.append(f"    … and {len(contents) - MAP_LIMIT} more entries")
+    lines.append(f"  Headings on the pages (the reader's SectionHeader blocks): {len(heads)}")
+    for b, t, k in list(zip(heads, head_texts, keys))[:MAP_LIMIT]:
+        if (b["page"], t) in hits:
+            lines.append(f"    p{b['page']:<4} ✓ {t}")
+            continue
+        best = max(range(len(contents)), key=lambda j: near(k, entry_keys[j]), default=None)
+        lines.append(f"    p{b['page']:<4} · {t}" + (f"  — nearest entry #{best + 1} {contents[best]['match']} ({near(k, entry_keys[best]):.2f})"
+                                                     if best is not None else ""))
+    if len(heads) > MAP_LIMIT:
+        lines.append(f"    … and {len(heads) - MAP_LIMIT} more headings")
+    missed = [j for j in range(len(contents)) if j not in matched]
+    if missed and heads:
+        lines.append(f"  Entries not found, with the nearest heading on the pages: {len(missed)}")
+        for j in missed[:MAP_LIMIT]:
+            i = max(range(len(heads)), key=lambda i: near(entry_keys[j], keys[i]))
+            lines.append(f"    #{j + 1:<3} {contents[j]['match']}  — nearest: p{heads[i]['page']} {head_texts[i]} ({near(entry_keys[j], keys[i]):.2f})")
+        if len(missed) > MAP_LIMIT:
+            lines.append(f"    … and {len(missed) - MAP_LIMIT} more")
+    return lines
 
 
 def build_report(sections, contents, skipped, blank, fixes, missed) -> list[str]:
@@ -723,7 +843,8 @@ def main():
     fixes = restore_r_dot(blocks) if meta.get("restore_r_dot") else []
     fixes += apply_text_fixes(blocks, meta.get("text_fixes", []))
     unnumbered, dropped = set(meta.get("unnumbered_sections", [])), set(meta.get("drop_sections", []))
-    contents = read_contents(blocks, unnumbered | dropped, meta.get("contents_pages"), meta.get("chapter_subentries", False))
+    contents_info = {}
+    contents = read_contents(blocks, unnumbered | dropped, meta.get("contents_pages"), meta.get("chapter_subentries", False), contents_info)
     # A contents page printed as plain lines would match its own titles: it is read for the contents only
     blocks = [b for b in blocks if b["page"] not in meta.get("contents_pages", [])]
     # Sections whose page heading differs from their contents title ("Srila Prabhupada" is headed "His Divine Grace A.C.
@@ -739,7 +860,15 @@ def main():
     italic_prose = meta.get("italic_prose", False)
     inserted = meta.get("insert_sections", [])
     opts = {"ocr_tables": meta.get("ocr_tables", False), "gallery": {x["title"] for x in inserted if x.get("gallery")}}
-    sections, skipped, missed = assemble(blocks, contents, unnumbered, dropped, front_prefixes, academic, italic_prose, inserted, opts)
+
+    def attempt(cont, op, ins, bl=None):
+        return assemble(blocks if bl is None else bl, cont, unnumbered, dropped, front_prefixes, academic, italic_prose, ins, op)
+
+    # The book's own contents as matched, kept for the report even when another way of finding the chapters is used
+    own_contents = contents
+    _, _, own_missed, own_matched = attempt(contents, opts, inserted)
+    contents, opts, inserted, (sections, skipped, missed, matched), method = find_chapters(
+        blocks, contents, opts, inserted, attempt, set(range(1, max(contents_info.get("pages") or [0]) + 1)), meta.get("title") or book)
 
     # Back cover = ISBN page plus the unnumbered cover pages before it; without an ISBN on it, the scan's unnumbered last page
     # built around a big picture (Saṁskāras: a blurb panel that otherwise became the last chapter's "figure" and paragraph).
@@ -751,7 +880,7 @@ def main():
                 (picture_share(b) for b in kept if b["page"] == last_page and b["label"] in ("Picture", "FullPage")), default=0) >= 0.3:
             kept = [b for b in kept if b["page"] != last_page]
         if len(kept) < len(blocks):
-            sections, skipped, missed = assemble(kept, contents, unnumbered, dropped, front_prefixes, academic, italic_prose, inserted, opts)
+            sections, skipped, missed, matched = attempt(contents, opts, inserted, kept)
             blocks = kept
 
     # Contents-page typos and titles cut off by a wrapped contents row, corrected from the chapter's own heading
@@ -771,9 +900,15 @@ def main():
     sections = [s for s in sections if s.kind != "drop"]
 
     out_dir = local_env.stage_dir(book, "assembled")
-    data = {"book": book, "layout": "prose", "sections": [asdict(s) for s in sections]}
+    listed, found = len(own_contents), len(own_contents) - len(own_missed)
+    data = {"book": book, "layout": "prose", "sections": [asdict(s) for s in sections],
+            "structure": {"method": method, "note": METHODS[method], "listed": listed, "found": found}}
     (out_dir / "book.json").write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
-    report = build_report(report_sections, contents, skipped, blank_pages(blocks, sections[0].start_page if sections else 1), fixes, missed)
+    # The contents check is always about the book's own contents page, whichever way the chapters were then found
+    report = build_report(report_sections, own_contents, skipped, blank_pages(blocks, sections[0].start_page if sections else 1), fixes,
+                          own_missed if method != "contents" else missed)
+    report.insert(2, f"Chapters found by: {METHODS[method]}")
+    report += book_map(blocks, own_contents, contents_info, own_matched if method != "contents" else matched, method)
     (out_dir / "report.txt").write_text("\n".join(report) + "\n", encoding="utf-8")
     print("\n".join(report[:2]))
     print(f"Wrote {out_dir}")

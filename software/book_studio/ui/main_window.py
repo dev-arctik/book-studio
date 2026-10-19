@@ -21,7 +21,7 @@ from PySide6.QtGui import QDesktopServices, QIcon, QPixmap
 from PySide6.QtWidgets import (QApplication, QCheckBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QMainWindow, QMenu,
                                QMessageBox, QProgressBar, QPushButton, QSplitter, QVBoxLayout, QWidget)
 
-from .. import APP_NAME, engine, paths, store, updater
+from .. import APP_NAME, engine, paths, report, store, updater
 from . import style
 from .book_list import BookList, RowState
 from .book_panel import BookPanel
@@ -236,11 +236,14 @@ class MainWindow(QMainWindow):
         self.retry_btn = QPushButton("Retry failed")
         self.retry_btn.setToolTip("Makes the books that failed again now — the book being read waits (its pages are kept) and continues after them")
         self.retry_btn.clicked.connect(self.retry_failed)
+        self.report_btn = QPushButton("Copy report")
+        self.report_btn.setToolTip("Copies what's worth a look in each book of the last run — to paste into a message for help")
+        self.report_btn.clicked.connect(self.copy_run_report)
         self.skip_btn = QPushButton("Skip the rest")
         self.skip_btn.clicked.connect(self.skip_rest)
         self.stop_btn = QPushButton("Stop")
         self.stop_btn.clicked.connect(self.stop)
-        for b in (self.make_btn, self.pause_btn, self.retry_btn, self.skip_btn, self.stop_btn):
+        for b in (self.make_btn, self.pause_btn, self.retry_btn, self.report_btn, self.skip_btn, self.stop_btn):
             h.addWidget(b, alignment=Qt.AlignVCenter)
         return outer
 
@@ -458,9 +461,11 @@ class MainWindow(QMainWindow):
             st.status, st.colour = "Needs attention", style.BAD
             st.detail = "open ⋯ → Check book to see why"
         elif self.is_ready(b):
-            st.status, st.colour = "Ready ✓", style.OK
+            st.status, st.colour = ("Ready — " + b.look, style.WARN) if b.look else ("Ready ✓", style.OK)
             made = [f"{kind} {size}" for kind, size in (("PDF", fmt_size(b.pdf)), ("EPUB", fmt_size(b.epub))) if size]
             st.detail = " · ".join([f"made {datetime.fromisoformat(b.built):%d %b, %H:%M}"] + made)
+            if b.look:
+                st.detail = "open ⋯ → Check book · " + st.detail
         elif b.built:
             st.status, st.colour = "Changed — make it again", style.WARN
             st.detail = "takes a moment, no reading again"
@@ -555,6 +560,7 @@ class MainWindow(QMainWindow):
         failed = self.failed_books()
         self.retry_btn.setVisible(bool(failed))
         self.retry_btn.setText(f"Retry failed ({len(failed)})")
+        self.report_btn.setVisible(not running and bool(self.report_books()))
         self.skip_btn.setVisible(running and bool((self.runner and self.rest_until) or self.between_until))
         self.stop_btn.setVisible(running)
         if not running:
@@ -862,7 +868,7 @@ class MainWindow(QMainWindow):
         elif kind == "done":
             b.built = datetime.now().isoformat(timespec="seconds")
             b.built_hash = self.current_hash
-            b.pdf, b.epub, b.error = ev["pdf"], ev["epub"], ""
+            b.pdf, b.epub, b.error, b.look = ev["pdf"], ev["epub"], "", ev.get("look", "")
             self.library.save()
         elif kind == "error":
             b.error = ev["message"]
@@ -908,6 +914,16 @@ class MainWindow(QMainWindow):
                 self.finished_note = (f"Done — {len(self.run_done)} book{'s' if len(self.run_done) != 1 else ''} made ✓" +
                                       (f", {len(failed)} need{'s' if len(failed) == 1 else ''} attention — press Retry failed" if failed else ""))
         self._refresh_all()
+
+    def report_books(self) -> list[store.Book]:
+        """The books of the last run; before any run, every book that was made or failed."""
+        ids = self.run_ids or [b.id for b in self.library.books if b.built or b.error]
+        return [b for b in (self.library.get(i) for i in ids) if b]
+
+    def copy_run_report(self):
+        QApplication.clipboard().setText(report.run_report(self.report_books()))
+        self.report_btn.setText("Copied ✓")
+        QTimer.singleShot(3000, lambda: self.report_btn.setText("Copy report"))
 
     def failed_books(self) -> list[str]:
         """Books whose last try failed and that aren't already in line."""

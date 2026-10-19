@@ -83,6 +83,7 @@ class Book:
     built: str = ""  # time of the last successful build
     built_hash: str = ""  # settings fingerprint at that build — tells "Ready" from "Changed"
     error: str = ""
+    look: str = ""  # made, but worth a look: "chapters need a look" when its contents page couldn't be matched
     pdf: str = ""  # finished files from the last build
     epub: str = ""
 

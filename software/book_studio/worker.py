@@ -10,6 +10,7 @@ import shutil
 import sys
 import time
 import traceback
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 
@@ -72,7 +73,9 @@ def wait_for_power() -> None:
 
 
 def is_digital(book: store.Book, pdf: Path) -> bool:
-    """A PDF with real text and a chapter outline (like Heart and Soul) needs no OCR; scans do."""
+    """A PDF with real, readable text and a chapter outline (a digital ebook) needs no OCR; scans do — and so does a PDF
+    whose text is in a symbol font with no letters behind it (an old diacritic font: every character a private-use code, which
+    comes out as boxes), so its pages are read like a scan."""
     kind = book.fixes.get("kind", "auto")
     if kind != "auto":
         return kind == "digital"
@@ -83,9 +86,15 @@ def is_digital(book: store.Book, pdf: Path) -> bool:
     try:
         if next(iter(doc.get_toc()), None) is None:
             return False
-        sample = range(min(len(doc), 30))
-        with_text = sum(len(doc[i].get_textpage().get_text_range().strip()) > 100 for i in sample)
-        return with_text >= 0.8 * len(sample)
+        sample = [doc[i].get_textpage().get_text_range() for i in range(min(len(doc), 30))]
+        if sum(len(t.strip()) > 100 for t in sample) < 0.8 * len(sample):
+            return False
+        chars = [ch for t in sample for ch in t if not ch.isspace()]
+        unreadable = sum(unicodedata.category(ch) in ("Co", "Cn", "Cc") for ch in chars)  # private-use, unassigned, control
+        if unreadable > 0.02 * len(chars):
+            print(f"The text in this PDF can't be read ({unreadable} of {len(chars)} characters have no letter behind them) — reading its pages instead")
+            return False
+        return True
     finally:
         doc.close()
 
@@ -167,6 +176,13 @@ def make_book(book_id: str) -> None:
         assembled = json.loads((local_env.stage_dir(book_id, "assembled") / "book.json").read_text(encoding="utf-8"))
         if not (assembled.get("sections") or assembled.get("chapters")):
             raise RuntimeError("no chapters found in this book")
+        # Made, but its chapters were found another way (an unusual contents page) or some weren't found: worth a look
+        structure = assembled.get("structure") or {}
+        look = ""
+        if structure.get("method", "contents") != "contents":
+            look = "chapters need a look"
+        elif structure.get("found", 0) < structure.get("listed", 0):
+            look = f"{structure['listed'] - structure['found']} of {structure['listed']} chapters not found"
 
         # Read the settings again: a title, cover or copyright choice changed while the pages were being read applies now
         meta = json.loads(local_env.META_FILE.read_text(encoding="utf-8"))[book_id]
@@ -192,7 +208,7 @@ def make_book(book_id: str) -> None:
         book_to_epub.convert(str(pdf))
         epub_out = epub_dir / f"{name}.epub"
         shutil.move(local_env.final_path(f"{book_id}_en.epub"), epub_out)
-        emit("done", pdf=str(pdf_out), epub=str(epub_out))
+        emit("done", pdf=str(pdf_out), epub=str(epub_out), look=look)
     except Stopped:
         emit("stopped")
     except Exception as exc:  # noqa: BLE001 — every failure must reach the window as a readable message

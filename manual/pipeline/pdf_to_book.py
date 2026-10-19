@@ -171,7 +171,7 @@ def convert(book: str) -> None:
     starts = Counter(round(l["x0"]) for p in pdf for l in page_lines(p) if l["size"] == body)
     margin = starts.most_common(1)[0][0]
     first_lines = [x for x in starts if indent_band(x, margin) == 1]
-    # The usual first-line indent; a book with none (Canakya Niti Sastra) separates paragraphs by a gap, so the gaps alone split it
+    # The usual first-line indent; a book with none separates paragraphs by a gap, so the gaps alone split it
     indent = max(first_lines, key=lambda x: starts[x]) if first_lines else None
     paras = paragraphs([page_items(p, body, margin) for p in pdf], body, pitch, right, margin if indent is not None else None, indent)
 

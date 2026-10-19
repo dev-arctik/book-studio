@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, 
                                QHBoxLayout, QLabel, QLineEdit, QListWidget, QMessageBox, QPlainTextEdit, QProgressBar,
                                QPushButton, QScrollArea, QSlider, QSpinBox, QSplitter, QTabWidget, QTextBrowser, QVBoxLayout, QWidget)
 
-from .. import __version__, engine, paths, store, updater
+from .. import __version__, engine, paths, report, store, updater
 
 
 class Task(QThread):
@@ -436,10 +436,12 @@ SECTION_RE = re.compile(r"^p\s*(\d+)\s+(?:\[(\w+)\]\s+)?(.+?)\s+(?:—|\()")
 
 def read_report(text: str) -> dict:
     """The pipeline's technical report.txt → what a volunteer needs: was everything found, and which pages deserve a look."""
-    out = {"listed": None, "found": None, "missing": [], "blank": [], "notes": [], "sections": []}
+    out = {"listed": None, "found": None, "missing": [], "blank": [], "notes": [], "sections": [], "method": ""}
     last = None
     for line in text.splitlines():
-        if m := re.search(r"Contents check: (\d+) listed.*?, (\d+) found", line):
+        if line.startswith("Chapters found by: ") and not out["method"]:
+            out["method"] = line.split(": ", 1)[1]
+        elif m := re.search(r"Contents check: (\d+) listed.*?, (\d+) found", line):
             out["listed"], out["found"] = int(m.group(1)), int(m.group(2))
         elif m := re.search(r"Sections from the outline: (\d+)", line):
             out["listed"] = out["found"] = int(m.group(1))
@@ -455,16 +457,6 @@ def read_report(text: str) -> dict:
         elif "drop cap may be missing" in line and last is not None:
             out["notes"].append((last["page"], f"“{last['title']}” starts with a small letter — the big first letter of the chapter may be missing."))
     return out
-
-
-def last_run_log(book_id: str) -> str:
-    """The book's log from its last "===== <time> — making <book> =====" heading on — what's needed to say why it failed."""
-    path = paths.LOGS_DIR / f"{book_id}.log"
-    if not path.exists():
-        return f"No log yet for {book_id}."
-    text = path.read_text(encoding="utf-8", errors="replace")
-    start = text.rfind("===== ")
-    return (text[start:] if start >= 0 else text).strip()
 
 
 class CheckDialog(QDialog):
@@ -543,10 +535,10 @@ class CheckDialog(QDialog):
         log = QPushButton("Open log")
         log.setObjectName("Link")
         log.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(paths.LOGS_DIR / f"{book.id}.log"))))
-        copy = QPushButton("Copy log")
+        copy = QPushButton("Copy report")
         copy.setObjectName("Link")
-        copy.setToolTip("Copies the last time this book was made, to paste into a message")
-        copy.clicked.connect(lambda: (QGuiApplication.clipboard().setText(last_run_log(book.id)), copy.setText("Copied ✓")))
+        copy.setToolTip("Copies this book's report (how its chapters were found) and its last log, to paste into a message for help")
+        copy.clicked.connect(lambda: (QGuiApplication.clipboard().setText(report.book_report(book)), copy.setText("Copied ✓")))
         bottom.addWidget(tech)
         bottom.addWidget(log)
         bottom.addWidget(copy)
@@ -563,6 +555,10 @@ class CheckDialog(QDialog):
             return f"<span style='color:{'#b3261e'}'>⚠️ <b>This book didn't finish.</b></span> {b.error}"
         if not self.raw:
             return "This book hasn't been put together yet — press <b>Make ticked books</b> first."
+        if r["method"] and r["method"] != "the book's contents page":
+            return (f"⚠️ <b>The PDF is made, but its chapters need a look.</b> Book Studio couldn't match this book's contents page "
+                    f"({r['found']} of {r['listed']} entries found), so it used {r['method'].split(' — ')[0].split(' (')[0]}. "
+                    "Check the chapters in the PDF — and press <b>Copy report</b> to send the details, so they can be set right.")
         if r["listed"] is None:
             return f"Book Studio found <b>{len(r['sections'])} chapters</b>. Check the list below looks like the book's contents page."
         if r["found"] >= r["listed"]:
