@@ -76,14 +76,28 @@ def is_digital(book: store.Book, pdf: Path) -> bool:
     kind = book.fixes.get("kind", "auto")
     if kind != "auto":
         return kind == "digital"
-    import pymupdf
+    # pypdfium2, not PyMuPDF: Windows Smart App Control can block PyMuPDF's unsigned library, and scans must never need it
+    import pypdfium2 as pdfium
 
-    with pymupdf.open(pdf) as doc:
-        if not doc.get_toc():
+    doc = pdfium.PdfDocument(str(pdf))
+    try:
+        if next(iter(doc.get_toc()), None) is None:
             return False
         sample = range(min(len(doc), 30))
-        with_text = sum(len(doc[i].get_text().strip()) > 100 for i in sample)
+        with_text = sum(len(doc[i].get_textpage().get_text_range().strip()) > 100 for i in sample)
         return with_text >= 0.8 * len(sample)
+    finally:
+        doc.close()
+
+
+def pymupdf_usable() -> bool:
+    """Digital PDFs are read with PyMuPDF; a computer that blocks it (Windows Smart App Control) reads them with OCR instead."""
+    try:
+        import pymupdf  # noqa: F401
+    except Exception:  # noqa: BLE001 — a blocked DLL raises ImportError/OSError
+        print("PyMuPDF can't be loaded on this computer (blocked?) — reading this digital PDF with OCR instead")
+        return False
+    return True
 
 
 FRIENDLY = {
@@ -105,7 +119,7 @@ def make_book(book_id: str) -> None:
     meta = json.loads(local_env.META_FILE.read_text(encoding="utf-8"))[book_id]
     stage = "starting"
     try:
-        digital = is_digital(book, pdf)
+        digital = is_digital(book, pdf) and pymupdf_usable()
         emit("kind", kind="digital" if digital else "scanned")
         if digital:
             stage = "assemble"

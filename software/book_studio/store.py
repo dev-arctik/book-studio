@@ -128,14 +128,13 @@ def slugify(name: str) -> str:
 
 def _pdf_metadata(path: Path) -> tuple[str, str]:
     """Title and author stored in the PDF, when they look like real ones (not 'Microsoft Word - scan.docx')."""
-    try:
-        import pymupdf
-
-        with pymupdf.open(path) as doc:
-            meta = doc.metadata or {}
-    except Exception:
+    try:  # pypdfium2, not PyMuPDF: Windows Smart App Control can block PyMuPDF, and adding a book must not trigger it
+        doc = pdfium.PdfDocument(str(path))
+        meta = doc.get_metadata_dict()
+        doc.close()
+    except Exception:  # noqa: BLE001 — no metadata is fine: the title then comes from the file name
         return "", ""
-    title, author = (meta.get("title") or "").strip(), (meta.get("author") or "").strip()
+    title, author = (meta.get("Title") or "").strip(), (meta.get("Author") or "").strip()
     if re.search(r"\.(docx?|pdf|indd)$|^microsoft|^untitled", title, re.I):
         title = ""
     return title, author
@@ -213,4 +212,4 @@ def clear_work(book: Book) -> None:
 
 def safe_filename(title: str) -> str:
     """A title usable as a file name on every system (Windows forbids : * ? " < > | / \\)."""
-    return re.sub(r'[\\/:*?"<>|]+', " ", title).strip(" .") or "book"
+    return re.sub(r"\s+", " ", re.sub(r'[\\/:*?"<>|]+', " ", title)).strip(" .") or "book"  # "A: B" → "A B", not "A  B"
