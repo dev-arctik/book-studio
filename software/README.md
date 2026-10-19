@@ -21,6 +21,7 @@ Status: **v0.1.0 built.** Tested on the M4 Mac: setup (page reader + model), rea
 - **List of books** with a tick box per book (*Select all*): *Make ticked books* runs only those; *With ticked books ▾* clears or removes them together. Each row has a step tracker (Read → Chapters → PDF → EPUB; digital PDFs Text → PDF → EPUB), status, progress bar with pages and time left. The run card on top shows books done, pages done of the run and time left for the whole run (cool-down rests included; speed remembered per computer). The details panel is collapsible (◂ Show details).
 - **Stop** offers *keep progress* (continue later) or *delete progress* (start again from page 1); outside OCR it stops at once.
 - **Check book** turns the pipeline's report.txt into plain sentences beside the scanned page; the technical report is one click away.
+- **Retry failed** / **Retry now** / **Make this book now** share `make_now()`: those books go to the front of the line; a book mid-OCR stops after its batch (pages kept) and is queued right after them, with no rest between.
 - **Book fixes** (the book_meta options per book) is an expert tool, hidden until Settings → Advanced → *Show expert tools*.
 - Light colours are forced even in Mac/Windows dark mode (dark-mode Qt drew a ticked checkbox as a black square); the Dock and menu bar show Book Studio's icon and name.
 

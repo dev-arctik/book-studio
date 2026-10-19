@@ -168,6 +168,13 @@ class BookPanel(QScrollArea):
         self.check.setEnabled((paths.WORK_DIR / "output" / b.id / "2-assembled" / "report.txt").exists() or bool(b.error))
         # Details stay editable while the book is being made: changes apply the next time it is made, which takes seconds
         self.make_btn.setEnabled(not busy)
+        self.make_btn.setText("Retry now" if b.error else "Make this book now")
+        # A book that needs attention: Check book (which says why) turns red with a "!"
+        self.check.setText("!  Check book" if b.error else "Check book")
+        if self.check.objectName() != ("Alert" if b.error else ""):
+            self.check.setObjectName("Alert" if b.error else "")
+            self.check.style().unpolish(self.check)
+            self.check.style().polish(self.check)
 
     # ---------- edits ----------
 

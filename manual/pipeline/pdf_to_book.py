@@ -170,8 +170,10 @@ def convert(book: str) -> None:
     # The body's left edge, for this book's first-line indents (paragraphs are not separated by a gap)
     starts = Counter(round(l["x0"]) for p in pdf for l in page_lines(p) if l["size"] == body)
     margin = starts.most_common(1)[0][0]
-    indent = max((x for x in starts if indent_band(x, margin) == 1), key=lambda x: starts[x])  # the usual first-line indent
-    paras = paragraphs([page_items(p, body, margin) for p in pdf], body, pitch, right, margin, indent)
+    first_lines = [x for x in starts if indent_band(x, margin) == 1]
+    # The usual first-line indent; a book with none (Canakya Niti Sastra) separates paragraphs by a gap, so the gaps alone split it
+    indent = max(first_lines, key=lambda x: starts[x]) if first_lines else None
+    paras = paragraphs([page_items(p, body, margin) for p in pdf], body, pitch, right, margin if indent is not None else None, indent)
 
     sections = []
     for i, (title, page) in enumerate(outline):

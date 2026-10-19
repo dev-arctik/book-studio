@@ -48,6 +48,8 @@ Book Studio was made for an ISKCON youth forum, to give young readers these book
 
 Reading pages is slow — a 500-page book takes several hours on a laptop. You can **Pause**, **Stop** (keeping or deleting what was done), or even close Book Studio — and if the computer **turns off or the battery dies**, nothing is lost either: every page is saved as soon as it is read, so *Make* continues where it stopped (at most the last 4 pages are read again). By default it works 60 minutes, then **rests 15** so laptops cool down, and rests between books (change it in *Settings*). Keep a laptop **plugged in** with the lid open: Book Studio keeps the computer from sleeping while it works, and **pauses by itself below 15 % battery** until the charger is plugged in. Book details (cover, title, copyright page) can be changed while a book is being read — they are used when its PDF is made.
 
+If a book **needs attention**, its red **! Check book** button says why, and **Copy log** copies the details to send to whoever helps you. **Retry now** (on the book) or **Retry failed** (next to Pause) makes failed books again straight away — a book being read waits, keeps its pages, and continues after them.
+
 ### Updates
 
 Every time it opens, Book Studio first checks for a new version here; if there is one, it asks *There is an update — do you want to update now?* Your books, settings and pages already read are kept.

@@ -32,6 +32,8 @@ QPushButton:disabled {{ color: #b5aca2; }}
 QPushButton#Primary {{ background: {ACCENT}; color: white; border: none; font-weight: bold; }}
 QPushButton#Primary:hover {{ background: #8d5718; }}
 QPushButton#Primary:disabled {{ background: #c9b39a; }}
+QPushButton#Alert {{ color: {BAD}; border: 1px solid {BAD}; font-weight: bold; }}
+QPushButton#Alert:hover {{ background: #fbeceb; }}
 QPushButton#Tool {{ border: none; padding: 10px 16px; font-size: 15px; }}
 QPushButton#Tool:hover {{ background: {ACCENT_SOFT}; }}
 QPushButton#Tool:disabled {{ color: #b5aca2; }}

@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pypdfium2 as pdfium
 from PySide6.QtCore import Qt, QThread, QUrl, Signal
-from PySide6.QtGui import QDesktopServices, QImage, QPixmap
+from PySide6.QtGui import QDesktopServices, QGuiApplication, QImage, QPixmap
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QGroupBox,
                                QHBoxLayout, QLabel, QLineEdit, QListWidget, QMessageBox, QPlainTextEdit, QProgressBar,
                                QPushButton, QScrollArea, QSlider, QSpinBox, QSplitter, QTabWidget, QTextBrowser, QVBoxLayout, QWidget)
@@ -457,6 +457,16 @@ def read_report(text: str) -> dict:
     return out
 
 
+def last_run_log(book_id: str) -> str:
+    """The book's log from its last "===== <time> — making <book> =====" heading on — what's needed to say why it failed."""
+    path = paths.LOGS_DIR / f"{book_id}.log"
+    if not path.exists():
+        return f"No log yet for {book_id}."
+    text = path.read_text(encoding="utf-8", errors="replace")
+    start = text.rfind("===== ")
+    return (text[start:] if start >= 0 else text).strip()
+
+
 class CheckDialog(QDialog):
     """Check book: did everything come out? Plain-language results, each clickable to show the scanned page beside it."""
 
@@ -533,8 +543,13 @@ class CheckDialog(QDialog):
         log = QPushButton("Open log")
         log.setObjectName("Link")
         log.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(paths.LOGS_DIR / f"{book.id}.log"))))
+        copy = QPushButton("Copy log")
+        copy.setObjectName("Link")
+        copy.setToolTip("Copies the last time this book was made, to paste into a message")
+        copy.clicked.connect(lambda: (QGuiApplication.clipboard().setText(last_run_log(book.id)), copy.setText("Copied ✓")))
         bottom.addWidget(tech)
         bottom.addWidget(log)
+        bottom.addWidget(copy)
         bottom.addStretch()
         close = QDialogButtonBox(QDialogButtonBox.Close)
         close.rejected.connect(self.reject)

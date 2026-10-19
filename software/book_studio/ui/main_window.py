@@ -112,6 +112,7 @@ class MainWindow(QMainWindow):
         self.stop_requested = False
         self.last_event = ""
         self.did_read_pages = False
+        self.retry_now = False  # the current book was stopped so failed books go first: no rest before them
         self.delete_after_stop: str | None = None  # book whose progress to throw away once it has stopped
         self.current_hash = ""  # the book's settings when it started — edits made while it runs show as 'Changed' afterwards
         self.finished_note = ""
@@ -147,7 +148,7 @@ class MainWindow(QMainWindow):
         self.panel.coverChanged.connect(self._cover_changed)
         self.panel.showCheck.connect(self.show_check)
         self.panel.showFixes.connect(self.show_fixes)
-        self.panel.makeThis.connect(lambda bid: self.make_books([bid]))
+        self.panel.makeThis.connect(lambda bid: self.make_now([bid]))
         self.panel.fixes.setVisible(self.settings.expert)
         self.split.addWidget(left)
         self.split.addWidget(self.panel)
@@ -232,11 +233,14 @@ class MainWindow(QMainWindow):
         self.make_btn.clicked.connect(lambda: self.make_books())
         self.pause_btn = QPushButton("Pause")
         self.pause_btn.clicked.connect(self.toggle_pause)
+        self.retry_btn = QPushButton("Retry failed")
+        self.retry_btn.setToolTip("Makes the books that failed again now — the book being read waits (its pages are kept) and continues after them")
+        self.retry_btn.clicked.connect(self.retry_failed)
         self.skip_btn = QPushButton("Skip the rest")
         self.skip_btn.clicked.connect(self.skip_rest)
         self.stop_btn = QPushButton("Stop")
         self.stop_btn.clicked.connect(self.stop)
-        for b in (self.make_btn, self.pause_btn, self.skip_btn, self.stop_btn):
+        for b in (self.make_btn, self.pause_btn, self.retry_btn, self.skip_btn, self.stop_btn):
             h.addWidget(b, alignment=Qt.AlignVCenter)
         return outer
 
@@ -548,6 +552,9 @@ class MainWindow(QMainWindow):
         self.make_btn.setText(f"▶  Make ticked books ({len(todo)})" if todo else "▶  Make ticked books")
         self.pause_btn.setVisible(self.runner is not None and self.phase in ("ocr", "paused", "starting"))
         self.pause_btn.setText("Resume" if self.phase == "paused" else "Pause")
+        failed = self.failed_books()
+        self.retry_btn.setVisible(bool(failed))
+        self.retry_btn.setText(f"Retry failed ({len(failed)})")
         self.skip_btn.setVisible(running and bool((self.runner and self.rest_until) or self.between_until))
         self.stop_btn.setVisible(running)
         if not running:
@@ -666,7 +673,7 @@ class MainWindow(QMainWindow):
         b = self.library.get(book_id)
         busy = b.id == self.current or b.id in self.queue
         menu = QMenu(self)
-        menu.addAction("Make this book now", lambda: self.make_books([b.id])).setEnabled(not busy and not self.is_ready(b))
+        menu.addAction("Retry now" if b.error else "Make this book now", lambda: self.make_now([b.id])).setEnabled(not busy and not self.is_ready(b))
         menu.addAction("Details", lambda: self._row_clicked(b.id))
         menu.addAction("Check book", lambda: self.show_check(b.id))
         if self.settings.expert:
@@ -887,18 +894,46 @@ class MainWindow(QMainWindow):
             self.queue.clear()
             self.finished_note = "Stopped"
         if self.queue:
-            if self.did_read_pages and self.settings.cooldown and self.settings.between_minutes > 0:
+            if self.did_read_pages and self.settings.cooldown and self.settings.between_minutes > 0 and not self.retry_now:
                 self.between_until = time.monotonic() + self.settings.between_minutes * 60
             else:
                 self.start_next()
+            self.retry_now = False
         elif finished and not self.stop_requested:
             QApplication.alert(self)
             failed = [i for i in self.run_ids if i not in self.run_done]
             if not self.run_done:
-                self.finished_note = "None of the books could be made — open ⋯ → Check book on one to see why"
+                self.finished_note = "None of the books could be made — open ⋯ → Check book on one to see why, or press Retry failed"
             else:
                 self.finished_note = (f"Done — {len(self.run_done)} book{'s' if len(self.run_done) != 1 else ''} made ✓" +
-                                      (f", {len(failed)} need{'s' if len(failed) == 1 else ''} attention" if failed else ""))
+                                      (f", {len(failed)} need{'s' if len(failed) == 1 else ''} attention — press Retry failed" if failed else ""))
+        self._refresh_all()
+
+    def failed_books(self) -> list[str]:
+        """Books whose last try failed and that aren't already in line."""
+        return [b.id for b in self.library.books if b.error and b.id != self.current and b.id not in self.queue]
+
+    def retry_failed(self):
+        self.make_now(self.failed_books())
+
+    def make_now(self, ids: list[str]):
+        """These books go first ("Retry failed", "Retry now", "Make this book now"). A book being read stops after the pages
+        in hand (they're kept) and continues after them; one in its last steps (chapters, PDF, EPUB — minutes) finishes first."""
+        ids = [i for i in ids if i != self.current]
+        if not ids:
+            return
+        if not self.runner and not self.between_until:
+            self.make_books(ids)
+            return
+        self.queue = ids + [i for i in self.queue if i not in ids]
+        self.run_ids += [i for i in ids if i not in self.run_ids]
+        if self.runner and self.phase in ("ocr", "rest", "paused", "battery") and self.current not in self.queue:  # not yet stopping
+            self.queue.insert(len(ids), self.current)
+            self.retry_now = True
+            store.write_json(paths.CONTROL_FILE, {"stop": True})
+            self.run_line.setText("Pausing this book after the pages being read now — it continues after the ones you asked for…")
+        elif self.between_until:
+            self.start_next()
         self._refresh_all()
 
     def toggle_pause(self):
