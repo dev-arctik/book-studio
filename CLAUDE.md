@@ -52,7 +52,7 @@ The desktop app runs `manual/pipeline` **unchanged**, pointed at its own data fo
 - Crash-safe OCR: `ocr_book.save_page()` writes page-NNN.json.tmp then renames it (a power cut never leaves a half-written page), and resuming re-reads any page that doesn't open (`page_done()`); tested by killing OCR and llama-server mid-run — only the batch in progress (≤4 pages) is read again.
 - Power (`manual/pipeline/power.py`, shared by the worker and run_book/ocr_book): `keep_awake()` holds off system sleep for the whole book (Mac `caffeinate -i -w <pid>`, Windows SetThreadExecutionState, Linux systemd-inhibit); `wait_for_power()` pauses between OCR batches on battery below 15 % until plugged in or 20 % (psutil). The window shows a power line while working and a reminder when a run starts on battery.
 - On opening, the app checks for updates first ("There is an update — do you want to update now?"), then setup. Book settings are re-read by the worker just before the PDF and the build is fingerprinted at the typeset stage, so edits made while pages are read go into that build.
-- Windows/Linux paths (launchers, Vulkan detection, Desktop icons) are untested on real machines.
+- Windows: tested on an ASUS laptop (Windows 11, 2026-10-19) — install, model download and the Start-menu icon work. Pitfalls seen: a zip that isn't Unblocked before extracting makes the .bat refuse to run; "Run as administrator" plus an unfinished setup left the app not opening (normal start works). Start-up failures now show a message box + logs/startup.log (pythonw has no console). Linux is still untested.
 
 ## How to verify (do this every time)
 

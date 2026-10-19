@@ -32,7 +32,7 @@ Book Studio was made for an ISKCON youth forum, to give young readers these book
 1. Download **`BookStudio-<version>.zip`** from this repository's [**Releases**](../../releases) page and unzip it somewhere it can stay (e.g. Documents).
 2. Open the **BookStudio** folder and start it:
    - **Mac:** double-click `Start Book Studio.command`. The first time, right-click it → *Open* → *Open* (it isn't signed by Apple). If it opens in a text editor, right-click → *Open With* → *Terminal*.
-   - **Windows:** double-click `Start Book Studio.bat`. If "Windows protected your PC" appears, click *More info* → *Run anyway*.
+   - **Windows:** first right-click the zip → *Properties* → tick **Unblock** → *OK*, then *Extract All*. Double-click `Start Book Studio.bat`; if "Windows protected your PC" appears, click *More info* → *Run anyway*. Don't use "Run as administrator" — it isn't needed and can stop Book Studio from opening.
    - **Linux:** run `sh start-book-studio.sh` in a terminal (Ubuntu may need `sudo apt install libxcb-cursor0`).
 3. Book Studio installs its own Python and parts into that folder (your computer's own Python is not used or changed), then asks for the **reading model** (1.4 GB): *Download it*, or *Load from a folder* if someone gave you a copy on a USB stick.
 4. From then on, open it from the **Book Studio** icon (Applications on Mac, Start menu on Windows).

@@ -25,7 +25,7 @@
 #step(2)[Open the BookStudio folder and *double-click the Start file* for your computer:]
 #table(columns: (auto, 1fr), stroke: 0.4pt + soft, inset: 6pt,
   [*Mac*], [*Start Book Studio.command* — the first time, macOS says it "cannot be opened because it is from an unidentified developer". Click *Done*, then *right-click* the file → *Open* → *Open*. Only once.],
-  [*Windows*], [*Start Book Studio.bat* — if a blue box says "Windows protected your PC", click *More info* → *Run anyway*. Only once.],
+  [*Windows*], [Before unzipping: right-click the zip → *Properties* → tick *Unblock* → *OK*, then *Extract All*. Double-click *Start Book Studio.bat* — if a blue box says "Windows protected your PC", click *More info* → *Run anyway*. Never use "Run as administrator": Book Studio installs only into your own folders.],
   [*Linux*], [*start-book-studio.sh* — right-click → *Run as a Program* (or open a terminal in the folder and type `sh start-book-studio.sh`). On Ubuntu, if the window doesn't open: `sudo apt install libxcb-cursor0`.],
 )
 #note[*The Start file opens as text instead* (in VS Code, TextEdit or another editor)? Your computer sends script files to that editor. Start it this way instead:
