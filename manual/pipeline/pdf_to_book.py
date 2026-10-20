@@ -95,6 +95,7 @@ def page_items(page, body: float, margin: float) -> list[dict]:
     icons = [b["bbox"] for b in page.get_text("dict")["blocks"] if b["type"] == 1
              and (b["bbox"][2] - b["bbox"][0]) * (b["bbox"][3] - b["bbox"][1]) < PICTURE_SHARE * w * h
              and min(b["bbox"][2] - b["bbox"][0], b["bbox"][3] - b["bbox"][1]) >= BULLET_MIN_SIZE]  # (decoration drawn as thousands of tiny images is not a bullet)
+    icons += pdf_text.bullet_boxes(page)
     for l in lines:
         l["bullet"] = any(abs(l["y"] - (y0 + y1) / 2) < 8 and l["x0"] >= x1 for x0, y0, x1, y1 in icons)
     items = [l for l in lines if l["size"] >= TABLE_SIZE * body]
@@ -137,6 +138,10 @@ def page_items(page, body: float, margin: float) -> list[dict]:
     for b in page.get_text("dict")["blocks"]:
         x0, y0, x1, y1 = b["bbox"]
         if b["type"] == 1 and (x1 - x0) * (y1 - y0) >= PICTURE_SHARE * w * h:
+            # A picture drawn twice, a hair apart (a shadow or a mask beside it), is one picture
+            same = [o for o in items if "object" in o and o["object"]["type"] == "figure" and abs(o["object"]["bbox"][0] - x0) < 4 and abs(o["object"]["bbox"][1] - y0) < 4]
+            if same:
+                continue
             items.append({"object": {"type": "figure", "page": page.number + 1, "bbox": [x0, y0, x1, y1], "image_bbox": [0, 0, w, h], "caption": ""}, "y": y0})
     return sorted(items, key=lambda l: l["y"])
 
@@ -198,6 +203,45 @@ def clean_outline(entries: list[tuple[str, int]]) -> list[tuple[str, int, str, s
     return out
 
 
+def join_cut_paragraphs(blocks: list[dict]) -> list[dict]:
+    """A plain paragraph that opens lowercase joins the earlier plain paragraph that stopped mid-sentence (pictures and tables between them do not matter)."""
+    joined, last_p = [], None
+    for blk in blocks:
+        if blk["type"] == "p" and last_p is not None and blk["text"][:1].islower() and not re.search(r"[.!?:;”’)\]>]\s*$", last_p["text"]):
+            last_p["text"] += " " + blk["text"]
+            continue
+        joined.append(blk)
+        if blk["type"] == "p":
+            last_p = blk
+        elif blk["type"] not in ("figure", "table"):
+            last_p = None
+    return joined
+
+
+def apply_fixes(sections: list[dict], meta: dict) -> None:
+    """book_meta.json corrections to the text, each printed with its number of matches (a fix that matches nothing is warned about):
+    "text_fixes" [["wrong", "right"], …] — plain text, e.g. a running head caught mid-sentence;
+    "word_fixes" {"Te": "The", …} — whole words whose letters the text layer lost (a ligature "Th" or "ft" that was not written out);
+    "regex_fixes" [["pattern", "replacement"], …]. They reach paragraphs, captions, verse lines and section titles."""
+    fixes = [(w, r, re.compile(re.escape(w))) for w, r in meta.get("text_fixes", [])]
+    fixes += [(w, r, re.compile(r"(?<![\w’])" + re.escape(w) + r"(?![\w’])")) for w, r in meta.get("word_fixes", {}).items()]
+    fixes += [(pat, r, re.compile(pat)) for pat, r in meta.get("regex_fixes", [])]
+    for wrong, right_text, rx in fixes:
+        hits = 0
+        for sec in sections:
+            sec["title"] = rx.sub(right_text, sec["title"])
+            for blk in sec["blocks"]:
+                for key in ("text", "caption"):
+                    if isinstance(blk.get(key), str):
+                        blk[key], n = rx.subn(right_text, blk[key])
+                        hits += n
+                if isinstance(blk.get("lines"), list):
+                    for k, line in enumerate(blk["lines"]):
+                        blk["lines"][k], n = rx.subn(right_text, line)
+                        hits += n
+        print(f"fix {wrong!r} → {right_text!r}: {hits}" if hits else f"WARNING: fix {wrong!r} matched nothing")
+
+
 def convert(book: str) -> None:
     pdf_path = local_env.find_book(book)
     book = pdf_path.stem  # the key in output/ and book_meta.json, whether given as a path or a name
@@ -211,11 +255,16 @@ def convert(book: str) -> None:
         first_pg, last_pg = meta["bold_paragraph_pages"]
         pdf_text.BOLD_PARA_PAGES = set(range(first_pg - 1, last_pg))
     pdf_text.FIRST_INDENT_MAX = meta.get("first_indent_max", pdf_text.FIRST_INDENT_MAX)
+    pdf_text.DROP_LINES = meta.get("drop_lines", [])
+    pdf_text.BULLET_FONTS = tuple(meta.get("bullet_fonts", []))
+    pdf_text.PAGE_NUMBER_BAND = meta.get("page_number_band", pdf_text.PAGE_NUMBER_BAND)
+    pdf_text.NUMBERED_ITEMS = bool(meta.get("numbered_items"))
     if meta.get("mirrored_pages"):  # facing pages with mirrored margins: align each page's margin before measuring indents
         pdf_text.PAGE_SHIFT = pdf_text.page_shifts(pdf)
     outline = clean_outline([(t.strip(), p) for level, t, p in pdf.get_toc() if level == 1])
     if not outline and meta.get("sections"):  # "sections": [["1: Title", first PDF page], …] — for a digital PDF without an outline (the chapters are found on its pages)
-        outline = [(t, p, "", "") for t, p in meta["sections"]]
+        outline = [(e[0], e[1], "", "") for e in meta["sections"]]  # an entry may add a third item: the text its section begins with (several sections share a page)
+    markers = [e[2] if len(e) > 2 else "" for e in meta["sections"]] if outline and meta.get("sections") and not pdf.get_toc() else []
     pdf_text.RUNNING_HEADS = running_heads(pdf)  # the book's own running heads are dropped from its text
     body, pitch, right = body_metrics([page_lines(p) for p in pdf])
     if meta.get("normalise_sizes"):  # chapters with their own body size (17 pt, 14 pt…): every page is scaled to the book's most common size
@@ -231,6 +280,7 @@ def convert(book: str) -> None:
 
     # Per-book settings (book_meta.json): "drop_sections" — outline titles left out (a page-number index means nothing once the
     # book is reflowed); "skip_pages" — scan pages left out (the publisher's back cover)
+    front_titles = {t.lower() for t in meta.get("front_sections", [])}
     skip_titles = SKIP_SECTIONS | {t.lower() for t in meta.get("drop_sections", [])}
     skip_pages = set(meta.get("skip_pages", []))
     paras = [p for p in paras if p["page"] + 1 not in skip_pages]
@@ -247,16 +297,23 @@ def convert(book: str) -> None:
         paras.sort(key=lambda p: p["page"])  # a stable sort: the order within a page is kept
 
     sections = []
+    # Sections that begin mid-page: each starts at the paragraph opening with its marker (else at its page's first paragraph) and runs to the next one's start
+    cuts = []
+    if any(markers):
+        for (_, page, _, _), mark in zip(outline, markers):
+            cuts.append(next((k for k, p in enumerate(paras) if p["page"] + 1 >= page and (not mark or p["page"] + 1 == page and re.sub(r"\s+", " ", p["text"]).lstrip().startswith(mark))), len(paras)))
     for i, (title, page, kind, lead) in enumerate(outline):
         end = outline[i + 1][1] if i + 1 < len(outline) else len(pdf) + 1
         if title.lower() in skip_titles:
             continue
         sec = {**section_of(title, page), "subtitle": "", "cover": None, "numeral": "", "footnotes": [], "blocks": []}
+        if title.lower() in front_titles:
+            sec["kind"] = "front"  # book_meta.json "front_sections": titles that open the book (about the author, dedication, how to use it…)
         if kind:
             sec["kind"] = kind
         if lead:
             sec["blocks"].append({"type": "h", "text": lead})
-        mine = [p for p in paras if page <= p["page"] + 1 < end]
+        mine = paras[cuts[i]:cuts[i + 1] if i + 1 < len(cuts) else len(paras)] if cuts else [p for p in paras if page <= p["page"] + 1 < end]
         # The printed title block (big lines at the top) is replaced by ours; its italic part is the author
         # ("Praharana devi dasi", "Cintamani devi dasi & Jagannatha Pandit dasa"), set under our title
         # (a label line set a little larger than the body — "Chapter Three", "Part 1" — belongs to that block too)
@@ -264,6 +321,8 @@ def convert(book: str) -> None:
         centre = pdf[0].rect.width / 2
         enlarged = lambda p: (sec["kind"] != "front" and p["kind"] == "p" and abs((p["x0"] + p.get("x1", 0)) / 2 - centre) < 8 and p["runs"]  # noqa: E731
                               and all(r.get("break") or not r["text"].strip() or r["size"] >= body + 0.9 for r in p["runs"]))
+        if cuts and markers[i] and mine and mine[0]["text"].strip() == markers[i]:
+            mine.pop(0)  # the heading line that opens the section repeats its title
         popped = []
         while not meta.get("no_title_block") and mine and (mine[0]["kind"] not in ("p", "object") or enlarged(mine[0])):  # "no_title_block": chapters start straight with their first story, no title page
             head = mine.pop(0)
@@ -295,7 +354,8 @@ def convert(book: str) -> None:
             flat = re.sub(r"(?<=\S) {2,}", " ", text.replace("\n", " "))  # Word text carries doubled spaces
             words = [r for r in p["runs"] if not r.get("break") and r["text"].strip()]
             italic = bool(words) and all(r["italic"] for r in words)
-            if p["kind"] != "p" or (sec["title"] == "Notes" and re.fullmatch(r"(Foreword|Introduction|Chapter \d+|Concluding Words)", p["text"])):
+            caps_heading = len(p["text"]) < 60 and p["text"].isupper() and len(p["text"].split()) <= 6 and sum(c.isalpha() for c in p["text"]) >= 6  # "FINANCIAL", "HEALTH": a typed-up book's subheading
+            if p["kind"] != "p" or caps_heading or (sec["title"] == "Notes" and re.fullmatch(r"(Foreword|Introduction|Chapter \d+|Concluding Words)", p["text"])):
                 if re.sub(r"\W", "", flat.lower()) != re.sub(r"\W", "", sec["title"].lower()):  # (not the section's own title again)
                     sec["blocks"].append({"type": "h", "text": flat})  # in Notes: the chapter each group of notes belongs to
             elif p["bullet"]:  # "In this chapter you will learn:" items, printed after a check-mark icon
@@ -310,19 +370,13 @@ def convert(book: str) -> None:
                 sec["blocks"].append({"type": "p", "text": flat})
         # A paragraph cut by a picture or a page break ("There was this" / picture / "burden of karma…") is one paragraph again:
         # a plain paragraph that opens lowercase joins the earlier plain paragraph that stopped mid-sentence
-        joined, last_p = [], None
-        for blk in sec["blocks"]:
-            if blk["type"] == "p" and last_p is not None and blk["text"][:1].islower() and not re.search(r"[.!?:;”’)\]>]\s*$", last_p["text"]):
-                last_p["text"] += " " + blk["text"]
-                continue
-            joined.append(blk)
-            if blk["type"] == "p":
-                last_p = blk
-            elif blk["type"] not in ("figure", "table"):
-                last_p = None
-        sec["blocks"] = joined
+        sec["blocks"] = join_cut_paragraphs(sec["blocks"])
         sec["blocks"] = [{k: v for k, v in b.items() if k != "top"} for b in merge_tables(sec["blocks"])]
         sections.append(sec)
+
+    apply_fixes(sections, meta)
+    for sec in sections:
+        sec["blocks"] = join_cut_paragraphs(sec["blocks"])  # a fix may leave a paragraph cut mid-sentence
 
     out_dir = local_env.stage_dir(book, "assembled")
     data = {"book": book, "layout": "prose", "sections": sections}

@@ -36,8 +36,11 @@ def balaram_fonts(pdf) -> set[str]:
     return {font for font, n in seen.items() if n >= 20}
 
 
+LIGATURES = {0xFB00: "ff", 0xFB01: "fi", 0xFB02: "fl", 0xFB03: "ffi", 0xFB04: "ffl"}  # ligature glyphs written as the letters they stand for
+
+
 def span_text(span: dict) -> str:
-    raw = span["text"].replace("​", "")
+    raw = span["text"].replace("​", "").translate(LIGATURES)
     if "\x03" in raw:  # a font without a text map: codes are 29 below the real letters, and "space" is code 3 ("WR\x03" = "to ")
         raw = "".join(chr(ord(c) + 29) if 3 <= ord(c) <= 100 else "é" if c == "Þ" else c for c in raw)
     text = re.sub(r"[\x00-\x08\x0b-\x1f]", "", raw)  # control characters some PDFs hide in the text (a stray \x08)
@@ -60,6 +63,10 @@ def page_blocks_text(page) -> list[str]:
 DROP_FONTS: tuple = ()  # font-name prefixes whose text is decoration (a faded mantra used as page background), set per book
 BOLD_PARA_PAGES: set[int] = set()  # pages (0-based) where a line opening with a bold term starts a new paragraph (a glossary)
 FIRST_INDENT_MAX = 25  # pt — a line this far right of the margin or less is a paragraph's first-line indent; book_meta.json "first_indent_max" sets it per book (a Word book indents 35 pt)
+BULLET_FONTS: tuple = ()  # font-name prefixes of a dingbat font whose letters are bullet marks ("O" = a round bullet): book_meta.json "bullet_fonts"
+PAGE_NUMBER_BAND = 0.9  # a bare number below this share of the page height is a page number; "page_number_band" in book_meta.json (a number in a box a little higher)
+NUMBERED_ITEMS = False  # book_meta.json "numbered_items": every line opening with "N. " starts a paragraph
+DROP_LINES: list = []  # regexes (book_meta.json "drop_lines"): a line matching one is left out wherever it sits — running heads a typed-up book carries in the middle of its text
 PAGE_SCALE: dict[int, float] = {}  # per page (0-based): factor for every font size — a book that sets each chapter's body text at its own size (17 pt, then 14 pt) reads as one size
 PAGE_SHIFT: dict[int, float] = {}  # per page (0-based): points added to every x, so mirrored facing pages share one left margin
 
@@ -98,16 +105,30 @@ def running_heads(pdf) -> set[str]:
     return {text for text, n in seen.items() if n >= 4}
 
 
+def is_bullet_line(ln: dict) -> bool:
+    """A line made only of a dingbat font's bullet mark."""
+    return bool(BULLET_FONTS) and all(s["font"].startswith(BULLET_FONTS) for s in ln["spans"] if s["text"].strip())
+
+
+def bullet_boxes(page) -> list[tuple]:
+    """Where the bullet marks of a dingbat font sit (x0, y0, x1, y1) — the lines beside them are list items."""
+    return [tuple(ln["bbox"]) for b in page.get_text("dict")["blocks"] for ln in b.get("lines", []) if is_bullet_line(ln)]
+
+
 def page_lines(page) -> list[dict]:
     """Every text line on a page with its spans; page numbers, running heads and blank lines left out."""
     lines = []
     for block in page.get_text("dict")["blocks"]:
         for ln in block.get("lines", []):
+            if is_bullet_line(ln):
+                continue  # the mark itself: page_items turns the line beside it into a list item
             spans = [{"text": span_text(s), "size": round(s["size"], 1),
                       "bold": bool(s["flags"] & 16) or "Bold" in s["font"], "italic": bool(s["flags"] & 2) or "Italic" in s["font"]}
                      for s in ln["spans"] if not s["font"].startswith("Type3") and not s["font"].startswith(DROP_FONTS)]  # Type3 = the Hindi PDF's page-number font
             text = "".join(s["text"] for s in spans).strip()
-            if not text or (re.fullmatch(r"\d{1,3}|[IVXLCivxlc]{1,6}", text) and ln["bbox"][1] > 0.9 * page.rect.height):
+            if not text or (re.fullmatch(r"\d{1,3}|[IVXLCivxlc]{1,6}", text) and ln["bbox"][1] > PAGE_NUMBER_BAND * page.rect.height):
+                continue
+            if any(re.search(rx, text) for rx in DROP_LINES):
                 continue
             if text in RUNNING_HEADS and ln["bbox"][1] < TOP_BAND * page.rect.height:
                 continue
@@ -194,6 +215,12 @@ def paragraphs(pages: list[list[dict]], body: float, pitch: float, right: float,
             else:
                 new = (last["kind"] != kind or l["y"] - lines[i - 1]["y"] > PARA_GAP * pitch * (l["size"] / body)
                        or (kind != "p" and last["kind"] != "p" and l["size"] != lines[i - 1]["size"]))
+                # A short all-capitals line ("IMPORTANCE", "THE ESSENCE") is a heading of its own, even where the typed-up text leaves no gap round it
+                heading_like = lambda ln: len(ln["text"]) < 60 and ln["text"].isupper() and len(ln["text"].split()) <= 6 and sum(c.isalpha() for c in ln["text"]) >= 6
+                if kind == "p" and NUMBERED_ITEMS and re.match(r"\d{1,2}\.\s+\S", l["text"]):
+                    new = True  # "19. …" opens a numbered item (book_meta.json "numbered_items": a typed-up compilation of quotations)
+                if kind == "p" and (heading_like(l) or heading_like(lines[i - 1])):
+                    new = True
                 if margin is not None and kind == "p" and not new:
                     before, now = indent_band(lines[i - 1]["x0"], margin), indent_band(l["x0"], margin)
                     new = before != now and (before, now) != (1, 0)  # a first line's indent followed by full lines is one paragraph

@@ -187,7 +187,7 @@
   counter(page).update(0)
   v(40mm)
   align(center)[
-    #text(size: 30pt, style: "italic", fill: accent, meta.title)
+    #text(size: 30pt, style: "italic", fill: accent, hyphenate: false, meta.title)
     #v(0.4em)
     #text(size: 13pt, fill: soft, meta.subtitle)
     #v(2.5em)
