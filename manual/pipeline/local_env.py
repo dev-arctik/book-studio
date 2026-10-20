@@ -68,9 +68,10 @@ def stage_dir(book: str, stage: str) -> Path:
     return path
 
 
-def final_path(filename: str) -> Path:
-    """<library>/<pdf|epub|word>/<filename> — where a finished, checked file goes, by its format."""
-    folder = FINAL_DIR / FINAL_KINDS[Path(filename).suffix.lower()]
+def final_path(filename: str, batch: Path | None = None) -> Path:
+    """<pdf|epub|word>/<filename> — where a finished, checked file goes, by its format. In the batch folder the book came from
+    (group1/pdf, group1/epub — Devansh's layout, 2026-10-20) when 'batch' is given and Book Studio's own folder is not set; else in the library."""
+    folder = (batch if batch and not os.environ.get("BOOK_STUDIO_FINAL") else FINAL_DIR) / FINAL_KINDS[Path(filename).suffix.lower()]
     folder.mkdir(parents=True, exist_ok=True)
     return folder / filename
 

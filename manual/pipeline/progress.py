@@ -126,8 +126,8 @@ def pdf_pages(path: Path) -> int:
         doc.close()
 
 
-def final_exists(key: str) -> bool:
-    return all((local_env.FINAL_DIR / local_env.FINAL_KINDS[ext] / f"{key}_en{ext}").is_file() for ext in (".pdf", ".epub"))
+def final_exists(key: str, batch: Path | None = None) -> bool:
+    return all(((batch or local_env.FINAL_DIR) / local_env.FINAL_KINDS[ext] / f"{key}_en{ext}").is_file() for ext in (".pdf", ".epub"))
 
 
 def speed(pages: list[Path]) -> float | None:
@@ -144,14 +144,14 @@ def minutes(seconds: float) -> str:
     return f"{m // 60} h {m % 60:02d} min" if m >= 60 else f"{m} min"
 
 
-def book_line(key: str, total: int | None, working: bool, rest_left: float | None = None) -> tuple[str, int]:
+def book_line(key: str, total: int | None, working: bool, rest_left: float | None = None, batch: Path | None = None) -> tuple[str, int]:
     """(status text, pages read) for one book."""
     ws = local_env.WORKSPACE_DIR / key
     ocr = ws / local_env.STAGES["ocr"]
     pages = list(ocr.glob("page-*.json")) if ocr.is_dir() else []
     done = len(pages)
     has = lambda stage, name: (ws / local_env.STAGES[stage] / name).is_file()  # noqa: E731
-    if final_exists(key):
+    if final_exists(key, batch):
         return "DONE — published in pdf/ and epub/", total or done
     if has("clean-pdf", f"{key}.pdf") and has("epub", f"{key}.epub"):
         return "built — waiting for its check, then publish", total or done
@@ -182,7 +182,7 @@ def render() -> str:
     power_text = "no battery info" if battery is None else f"{battery[0]}% {'plugged in' if battery[1] else 'ON BATTERY'}"
     rows, read, all_pages, published = [], 0, 0, 0
     for n, key in enumerate(keys, 1):
-        status, got = book_line(key, totals.get(key), working, rest_left)
+        status, got = book_line(key, totals.get(key), working, rest_left, inputs)
         published += status.startswith("DONE")
         read += got
         all_pages += totals.get(key) or 0

@@ -24,8 +24,10 @@ book-library/                  never in git
 │   │                          3-clean-pdf/ (the PDF draft), 4-epub/ (the EPUB draft)
 │   ├── logs.md                one log for ALL runs: every manual fix the pipeline couldn't do, to improve it later
 │   └── STATUS.md              which books are done and how far each is
-├── pdf/                       finished, checked books: <book>_en.pdf
-└── epub/                      finished, checked books: <book>_en.epub
+└── <batch>/                   not part of the library proper: the folder Devansh hands over each run (group1/, Group 2/ …) —
+    ├── the originals + cover images     they stay here, only read
+    ├── pdf/                              finished, checked books: <book>_en.pdf (publish_book.py puts them here)
+    └── epub/                             finished, checked books: <book>_en.epub
 ```
 
 Keep a book's `workspace/<book>/` while you may still fix it; changing it later means reading all its pages again. Book Studio keeps its own data folder with the same stages (its working folder is called `output/`).
@@ -44,7 +46,7 @@ Keep a book's `workspace/<book>/` while you may still fix it; changing it later 
    ```
    poetry run python manual/pipeline/publish_book.py <input-folder>/without-fear.pdf --library ../book-library
    ```
-   This copies them to `pdf/without-fear_en.pdf` and `epub/without-fear_en.epub`. Only checked books go there.
+   This copies them to `pdf/without-fear_en.pdf` and `epub/without-fear_en.epub` **inside the input folder** (beside the original, so each batch keeps its finished books together). Only checked books go there.
 
 A book that arrives as a **clean digital PDF** (real text, not a scan) skips the OCR: `pdf_to_book.py <pdf> --library <library>` writes the same `book.json` from its text (sections from the PDF's outline, pictures, tables, verses, drop caps), then `typeset_book.py` and `book_to_epub.py` work as usual. **Check the text layer before any OCR** (2026-10-20: three digital books were nearly read by OCR for hours): open the PDF with PyMuPDF and look at characters per page (a scan has none, or a few hundred of OCR junk), whether a page-sized image lies under the text, and whether the letters are stand-ins or private-use codes. A PDF without an outline takes its chapters from `"sections": [["1: Title", first PDF page], …]` in `book_meta.json` (find the pages by searching for "CHAPTER N" and read the printed contents). Digital-route settings in `book_meta.json`: `sections`, `drop_sections`, `skip_pages`, `first_indent_max` (a Word book indents 35 pt), `normalise_sizes` (chapters with their own body size), `no_title_block` (chapters start straight with their first story), `drop_fonts`, `bullet_min_size`, `skip_pictures`, `picture_pages`, `mirrored_pages`, `bold_paragraph_pages`. No rests are needed — nothing heavy runs.
 
@@ -54,7 +56,7 @@ A book that arrives as a **clean digital PDF** (real text, not a scan) skips the
 | 2. Assemble | `assemble_verses.py` / `assemble_prose.py` | Drops headers and page numbers, re-joins text split by page breaks, and tags each part (verses: Sanskrit, word-for-word, translation, poet — prose: paragraphs, verse quotes, sources, signatures, photos). Writes `report.txt`. | `workspace/<book>/2-assembled/` |
 | 3. Typeset | `typeset_book.py` | Builds the clean A5 PDF with Typst: cover, title page, contents, foreword/introduction, chapters. Photos and drawings are cropped from the scan by `figures.py` and placed where they appear, with captions. | `workspace/<book>/3-clean-pdf/` |
 | 4. EPUB | `book_to_epub.py` | The same chapters, pictures and cover as an e-book, with a clickable contents. | `workspace/<book>/4-epub/` |
-| 5. Publish | `publish_book.py` | After checking: copies the PDF and EPUB to the library's `pdf/` and `epub/`. | `pdf/`, `epub/` |
+| 5. Publish | `publish_book.py` | After checking: copies the PDF and EPUB to `pdf/` and `epub/` in the batch (input) folder. | `<batch>/pdf/`, `<batch>/epub/` |
 
 ## Word (.docx) and e-book (.epub) copies
 
