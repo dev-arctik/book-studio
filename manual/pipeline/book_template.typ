@@ -83,7 +83,8 @@
   } else if b.type == "figure" {
     // Size from the picture's shape: tall Deity photos capped by height, wide temple drawings by width
     block(width: 100%, breakable: false, above: 1.3em, below: 1.3em, align(center, {
-      image(b.path, width: calc.min(100mm, 92mm / b.aspect))
+      // A whole page set as a picture ("wide") runs the full text width so its small print stays readable
+      image(b.path, width: if b.at("wide", default: false) { 100% } else { calc.min(100mm, 92mm / b.aspect) })
       if b.caption.len() > 0 {
         v(0.45em)
         block(width: 85%, text(size: 9pt, style: "italic", fill: soft, rich(b.caption)))
@@ -148,6 +149,12 @@
     #ornament
   ]
   for b in paintings { prose-block(b) }
+  // A Part that holds its own text (Śrī Hari-nāma: Part Two's stanzas sit directly under it) continues on the next page
+  let body = ch.blocks.filter(b => b.type != "figure")
+  if body.len() > 0 {
+    pagebreak(weak: true)
+    for b in body { prose-block(b) }
+  }
 }
 
 #let chapter(ch, i) = {

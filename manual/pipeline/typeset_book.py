@@ -17,6 +17,7 @@ import typst
 
 from figures import book_cover, crop_figure, has_ink
 from ocr_text import PICTURE_LABELS, clean_inline, ocr_pages
+from pdf_text import page_blocks_text  # (reads no PDF library itself: scan books never load PyMuPDF)
 
 TEMPLATE = local_env.PIPELINE_DIR / "book_template.typ"
 META_FILE = local_env.META_FILE
@@ -79,7 +80,7 @@ class FigureCropper:
         figure = figure or crop_figure(self.pdf, b["page"], b["bbox"], b["image_bbox"])
         path = self.build_dir / f"figure-{self.count:03d}.jpg"
         figure.save(path, quality=78, optimize=True)
-        return {"path": typst_path(path), "aspect": figure.height / figure.width,
+        return {"path": typst_path(path), "aspect": figure.height / figure.width, "wide": b.get("wide", False),
                 "caption": to_segments(b["caption"]) if b["caption"] else []}
 
 
@@ -188,8 +189,7 @@ def copyright_page(book: str, first_page: int) -> list[list[list[dict]]] | None:
     if not pages:
         import pymupdf
         with pymupdf.open(local_env.find_book(book)) as pdf:
-            pages = [(n + 1, [b[4].strip() for b in pdf[n].get_text("blocks") if b[6] == 0 and b[4].strip()])
-                     for n in range(min(first_page - 1, len(pdf)))]
+            pages = [(n + 1, page_blocks_text(pdf[n])) for n in range(min(first_page - 1, len(pdf)))]  # decoded like the book's text
     best, best_hits = None, 1
     for n, texts in pages:
         hits = len(COPYRIGHT_RE.findall(" ".join(texts)))

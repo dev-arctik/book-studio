@@ -14,7 +14,8 @@ from collections import Counter
 
 import pymupdf
 
-from pdf_text import body_metrics, indent_band, page_lines, paragraphs
+import pdf_text
+from pdf_text import body_metrics, indent_band, page_lines, paragraphs, running_heads
 
 META_FILE = local_env.META_FILE
 SKIP_SECTIONS = {"title page", "copyright", "contents", "table of contents"}  # we build our own title page and contents
@@ -161,11 +162,42 @@ def section_of(title: str, page: int) -> dict:
     return {"kind": kind, "title": title, "start_page": page}
 
 
+LABEL_RE = re.compile(r"^chapter\s+[\w-]+$", re.I)  # "Chapter One": a label that has its own outline entry before the real title
+FRONT_LABELS = ("foreword", "introduction", "preface")
+
+
+def clean_outline(entries: list[tuple[str, int]]) -> list[tuple[str, int, str, str]]:
+    """(title, page) outline entries → (title, page, kind override, first heading). Word's hidden bookmarks ("_GoBack") are dropped;
+    a bare "Chapter One" entry and the title on the same page become one chapter (with an optional "Part 1" entry after it);
+    a chapter printed again under the same title continues as an unnumbered part; "Introduction" followed by its own title on
+    the same page keeps that title as its first heading."""
+    items = [(t, p) for t, p in entries if not t.startswith("_")]
+    out, seen, i = [], set(), 0
+    while i < len(items):
+        title, page = items[i]
+        nxt = items[i + 1] if i + 1 < len(items) else None
+        if LABEL_RE.match(title) and nxt and nxt[1] == page:
+            real, i = nxt[0], i + 2
+            part = items[i][0] if i < len(items) and items[i][1] == page and re.fullmatch(r"part\s+\w+", items[i][0], re.I) else None
+            i += part is not None
+            full = f"{real}: {part}" if part else real
+            out.append((("1: " + full) if real not in seen else full, page, "" if real not in seen else "back", ""))
+            seen.add(real)
+        elif title.lower() in FRONT_LABELS and nxt and nxt[1] == page:
+            out.append((title, page, "", nxt[0]))
+            i += 2
+        else:
+            out.append((title, page, "", ""))
+            i += 1
+    return out
+
+
 def convert(book: str) -> None:
     pdf_path = local_env.find_book(book)
     book = pdf_path.stem  # the key in output/ and book_meta.json, whether given as a path or a name
     pdf = pymupdf.open(pdf_path)
-    outline = [(t.strip(), p) for level, t, p in pdf.get_toc() if level == 1]
+    outline = clean_outline([(t.strip(), p) for level, t, p in pdf.get_toc() if level == 1])
+    pdf_text.RUNNING_HEADS = running_heads(pdf)  # the book's own running heads are dropped from its text
     body, pitch, right = body_metrics([page_lines(p) for p in pdf])
     # The body's left edge, for this book's first-line indents (paragraphs are not separated by a gap)
     starts = Counter(round(l["x0"]) for p in pdf for l in page_lines(p) if l["size"] == body)
@@ -175,20 +207,43 @@ def convert(book: str) -> None:
     indent = max(first_lines, key=lambda x: starts[x]) if first_lines else None
     paras = paragraphs([page_items(p, body, margin) for p in pdf], body, pitch, right, margin if indent is not None else None, indent)
 
+    # Per-book settings (book_meta.json): "drop_sections" — outline titles left out (a page-number index means nothing once the
+    # book is reflowed); "skip_pages" — scan pages left out (the publisher's back cover)
+    meta = json.loads(META_FILE.read_text(encoding="utf-8")).get(book, {}) if META_FILE.is_file() else {}
+    skip_titles = SKIP_SECTIONS | {t.lower() for t in meta.get("drop_sections", [])}
+    skip_pages = set(meta.get("skip_pages", []))
+    paras = [p for p in paras if p["page"] + 1 not in skip_pages]
+
     sections = []
-    for i, (title, page) in enumerate(outline):
+    for i, (title, page, kind, lead) in enumerate(outline):
         end = outline[i + 1][1] if i + 1 < len(outline) else len(pdf) + 1
-        if title.lower() in SKIP_SECTIONS:
+        if title.lower() in skip_titles:
             continue
         sec = {**section_of(title, page), "subtitle": "", "cover": None, "numeral": "", "footnotes": [], "blocks": []}
+        if kind:
+            sec["kind"] = kind
+        if lead:
+            sec["blocks"].append({"type": "h", "text": lead})
         mine = [p for p in paras if page <= p["page"] + 1 < end]
         # The printed title block (big lines at the top) is replaced by ours; its italic part is the author
         # ("Praharana devi dasi", "Cintamani devi dasi & Jagannatha Pandit dasa"), set under our title
-        while mine and mine[0]["kind"] not in ("p", "object"):
+        # (a label line set a little larger than the body — "Chapter Three", "Part 1" — belongs to that block too)
+        # — but only when it is centred, like the title block (a left-aligned enlarged line is a heading inside the chapter)
+        centre = pdf[0].rect.width / 2
+        enlarged = lambda p: (sec["kind"] != "front" and p["kind"] == "p" and abs((p["x0"] + p.get("x1", 0)) / 2 - centre) < 8 and p["runs"]  # noqa: E731
+                              and all(r.get("break") or not r["text"].strip() or r["size"] >= body + 0.9 for r in p["runs"]))
+        popped = []
+        while mine and (mine[0]["kind"] not in ("p", "object") or enlarged(mine[0])):
             head = mine.pop(0)
+            popped.append(re.sub(r"\s+", " ", " ".join(r["text"].strip() for r in head["runs"] if not r.get("break"))).strip())
             author = " ".join(r["text"].strip() for r in head["runs"] if not r.get("break") and r.get("italic") and r["text"].strip())
             if author:
                 sec["subtitle"] = re.sub(r"\s+", " ", author)
+        if not sec["subtitle"] and len(popped) >= 3:  # "Chapter One" / "Nāma-Aparādha" / "The Ten Offences…": the last line is the subtitle
+            last = popped[-1]
+            same_as_title = re.sub(r"\W", "", last.lower()) == re.sub(r"\W", "", sec["title"].lower())
+            if last and not same_as_title and not LABEL_RE.match(last) and not re.fullmatch(r"part\s+\w+", last, re.I):
+                sec["subtitle"] = last
         drop = ""
         for p in mine:
             if p["kind"] == "object":

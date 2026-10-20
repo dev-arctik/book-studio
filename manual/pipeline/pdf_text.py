@@ -22,12 +22,40 @@ BALARAM = str.maketrans({
 
 
 def span_text(span: dict) -> str:
-    text = span["text"].replace("​", "")
-    return text.translate(BALARAM) if span["font"].startswith("Balaram") else text
+    text = re.sub(r"[\x00-\x08\x0b-\x1f]", "", span["text"].replace("​", ""))  # control characters some PDFs hide in the text (a stray \x08)
+    # "Gaudiya" (Gaudiya Press / Tattva Vicara books) uses the very same stand-in letters as "Balaram"
+    return text.translate(BALARAM) if span["font"].startswith(("Balaram", "Gaudiya")) else text
+
+
+def page_blocks_text(page) -> list[str]:
+    """A page's text blocks as plain text (lines joined by newlines), old diacritic fonts decoded — for the copyright page."""
+    out = []
+    for block in page.get_text("dict")["blocks"]:
+        lines = ["".join(span_text(s) for s in ln["spans"]).strip() for ln in block.get("lines", [])]
+        text = "\n".join(l for l in lines if l)
+        if text:
+            out.append(text)
+    return out
+
+
+RUNNING_HEADS: set[str] = set()  # texts printed at the very top of many pages, set per book by pdf_to_book via running_heads()
+TOP_BAND = 0.07  # a running head sits within this share of the page height from the top
+
+
+def running_heads(pdf) -> set[str]:
+    """Texts that open the top band of at least 4 pages — the book's running heads, which are not part of its text."""
+    seen = Counter()
+    for page in pdf:
+        for block in page.get_text("dict")["blocks"]:
+            for ln in block.get("lines", []):
+                text = "".join(span_text(s) for s in ln["spans"]).strip()
+                if text and ln["bbox"][1] < TOP_BAND * page.rect.height:
+                    seen[text] += 1
+    return {text for text, n in seen.items() if n >= 4}
 
 
 def page_lines(page) -> list[dict]:
-    """Every text line on a page with its spans; page numbers and blank lines left out."""
+    """Every text line on a page with its spans; page numbers, running heads and blank lines left out."""
     lines = []
     for block in page.get_text("dict")["blocks"]:
         for ln in block.get("lines", []):
@@ -35,9 +63,14 @@ def page_lines(page) -> list[dict]:
                       "bold": bool(s["flags"] & 16) or "Bold" in s["font"], "italic": bool(s["flags"] & 2) or "Italic" in s["font"]}
                      for s in ln["spans"] if not s["font"].startswith("Type3")]  # Type3 = the Hindi PDF's page-number font
             text = "".join(s["text"] for s in spans).strip()
-            if not text or (re.fullmatch(r"\d{1,3}", text) and ln["bbox"][1] > 0.9 * page.rect.height):
+            if not text or (re.fullmatch(r"\d{1,3}|[IVXLCivxlc]{1,6}", text) and ln["bbox"][1] > 0.9 * page.rect.height):
                 continue
-            size = Counter({s["size"]: len(s["text"].strip()) for s in spans}).most_common(1)[0][0]
+            if text in RUNNING_HEADS and ln["bbox"][1] < TOP_BAND * page.rect.height:
+                continue
+            sizes = Counter()  # characters per size (a dict comprehension let a trailing space overwrite the real count)
+            for s in spans:
+                sizes[s["size"]] += len(s["text"].strip())
+            size = sizes.most_common(1)[0][0]
             lines.append({"spans": spans, "text": text, "size": size, "y": ln["bbox"][1], "x0": ln["bbox"][0], "x1": ln["bbox"][2]})
     return sorted(lines, key=lambda l: l["y"])
 
@@ -114,7 +147,7 @@ def paragraphs(pages: list[list[dict]], body: float, pitch: float, right: float,
                     elif lines[i - 1]["text"].rstrip().endswith("]"):
                         new = True
             if new:
-                paras.append({"kind": kind, "runs": [], "text": "", "page": page_no, "x0": l.get("x0", 0), "bullet": l.get("bullet", False)})
+                paras.append({"kind": kind, "runs": [], "text": "", "page": page_no, "x0": l.get("x0", 0), "x1": l.get("x1", 0), "bullet": l.get("bullet", False)})
                 last = paras[-1]
             elif last["runs"]:
                 # Joining the next line: keep a deliberate short-line break (verse, address); otherwise a space,
@@ -124,10 +157,35 @@ def paragraphs(pages: list[list[dict]], body: float, pitch: float, right: float,
                     last["runs"].append({"break": True})
                 elif not last["text"].endswith("-"):
                     last["runs"].append({"text": " ", "bold": False, "italic": False, "size": l["size"]})
+                else:  # a line ended in "-": remember the join, so heal_hyphens() can tell a broken word from a real hyphen
+                    last["runs"].append({"text": "", "bold": False, "italic": False, "size": l["size"], "joined": True})
             for s in l["spans"]:
                 last["runs"].append({"text": s["text"], "bold": s["bold"], "italic": s["italic"], "size": s["size"]})
             last["text"] = (last["text"] + " " + l["text"]).strip()
+            last["x1"] = max(last.get("x1", 0), l.get("x1", 0))
+    heal_hyphens(paras)
     return paras
+
+
+def heal_hyphens(paras: list[dict]) -> None:
+    """A word the printer broke at a line end ("aus-" / "picious") is joined again when the whole word is used elsewhere in the
+    book; otherwise the hyphen stays (it may be a real one: "karma-" / "kāṇḍa"). Marked joins are in the runs ("joined")."""
+    vocabulary = Counter(w.lower() for p in paras for w in re.findall(r"\w{4,}", p["text"]))
+    for p in paras:
+        runs = p["runs"]
+        for i, run in enumerate(runs):
+            if not run.get("joined"):
+                continue
+            before = next((r for r in reversed(runs[:i]) if not r.get("break") and r["text"]), None)
+            after = next((r for r in runs[i + 1:] if not r.get("break") and r["text"]), None)
+            if not before or not after or not before["text"].endswith("-"):
+                continue
+            left = re.search(r"(\w+)-$", before["text"])
+            right = re.match(r"(\w+)", after["text"])
+            if left and right and vocabulary[(left.group(1) + right.group(1)).lower()] > 0:
+                before["text"] = before["text"][:-1]
+    for p in paras:
+        p["runs"] = [r for r in p["runs"] if not r.get("joined")]
 
 
 def read_pdf(pdf) -> tuple[list[dict], float]:

@@ -31,7 +31,7 @@ TOC_NUMBERED_RE = re.compile(r"^(\d{1,2})\s+([A-Za-z].+)$")  # "1 Children of th
 TOC_CHAPTER_RE = re.compile(r"^Chapter\s+(\d+)\s*:\s*(.+)$", re.I)
 SCENE_BREAK_RE = re.compile(r"^\*(\s*\*)+$")
 ORNAMENT_RE = re.compile(r"^[_\-–—]+\*{3,}[_\-–—]+$")  # "__*****__": a printed divider line, left out
-PART_LABEL_RE = re.compile(r"^PART\s+[A-Z]+$", re.I)  # "PART ONE" under a part title
+PART_LABEL_RE = re.compile(r"^PART\s+([A-Z]+|\d{1,2})$", re.I)  # "PART ONE" / "PART 1" above a part title
 NOTE_START_RE = re.compile(r"^\d{1,3}\.\s")
 # Roman-numbered chapters ("IV. Vivāha-saṁskāra: Marriage", "XVII Vidyārambha…") and their numbered sub-sections ("IV.2.", "1.2.4.")
 TOC_ROMAN_RE = re.compile(r"^([IVXL]+)\.?\s+(\S.+)$")
@@ -108,7 +108,18 @@ def facsimile(page_no: int, page_blocks) -> list[dict]:
     return out
 
 
-def load_blocks(book: str, academic: bool = False, facsimiles: set = frozenset(), inset_quotes: bool = False, running_heads: list = (), shaped: bool = False):
+def picture_page(page_no: int, page_blocks) -> list[dict]:
+    """A page set as one full-width picture, with no caption — for pages in a script we cannot typeset (the Bengali text of Śrī
+    Hari-nāma): the page's content, without its running head and page number, as printed."""
+    content = [b for b in page_blocks if b["label"] not in ("PageHeader", "PageFooter") and ((b["html"] or "").strip() or b["label"] in PICTURE_LABELS)]
+    if not content:
+        return []
+    bbox = [min(b["bbox"][0] for b in content), min(b["bbox"][1] for b in content), max(b["bbox"][2] for b in content), max(b["bbox"][3] for b in content)]
+    return [{"page": page_no, "label": "Picture", "text": "", "bbox": bbox, "image_bbox": content[0]["image_bbox"], "wide": True}]
+
+
+def load_blocks(book: str, academic: bool = False, facsimiles: set = frozenset(), inset_quotes: bool = False, running_heads: list = (), shaped: bool = False,
+                picture_pages: set = frozenset()):
     """Text and picture blocks in reading order, plus the set of pages carrying a printed page number (i.e. real book pages, not covers).
     Academic books (page footnotes, indented quotations) also get each block's indentation shape and their footnotes marked."""
     blocks, numbered_pages = [], set()
@@ -117,6 +128,10 @@ def load_blocks(book: str, academic: bool = False, facsimiles: set = frozenset()
         if page_no in facsimiles:
             numbered_pages.add(page_no)
             blocks += facsimile(page_no, page_blocks)
+            continue
+        if page_no in picture_pages:
+            numbered_pages.add(page_no)
+            blocks += picture_page(page_no, page_blocks)
             continue
         for b in page_blocks:
             if b["label"] in PICTURE_LABELS:
@@ -418,6 +433,10 @@ def title_ratio(heading: str, listed: str) -> float:
     numeral = re.match(r"^([IVXL]+)\.", heading.strip())
     if numeral and listed.startswith(numeral.group(1) + ".") and len(h) >= 10 and l.startswith(h):
         best = 1.0
+    # A page heading that is the contents title plus a description ("… 2.2.205" / "… 2.2.205 on the role of karma and jñāna")
+    bare = ascii_key(re.sub(r"^chapter\s+\d+\s*", "", listed, flags=re.I))
+    if len(bare) >= 12 and any(ascii_key(x).startswith(bare) for x in headings):
+        best = max(best, 0.95)
     return best
 
 
@@ -560,7 +579,7 @@ def assemble(blocks, contents, unnumbered: set, dropped: set, front_prefixes: tu
                 sections[-1].cover = full_pages[blk["page"]]
             continue
         if blk["label"] == "Picture":
-            figure = {"type": "figure", "page": blk["page"], "bbox": blk["bbox"], "image_bbox": blk["image_bbox"], "caption": ""}
+            figure = {"type": "figure", "page": blk["page"], "bbox": blk["bbox"], "image_bbox": blk["image_bbox"], "caption": "", "wide": blk.get("wide", False)}
             if sections:
                 sections[-1].blocks.append(figure)
             else:
@@ -873,7 +892,8 @@ def main():
     book = (local_env.book_path(sys.argv[1]) if len(sys.argv) > 1 else sys.exit(local_env.USAGE)).stem
     meta = json.loads(META_FILE.read_text(encoding="utf-8"))[book]
     blocks, numbered_pages = load_blocks(book, meta.get("academic", False), set(meta.get("facsimile_pages", [])), meta.get("inset_quotes", False),
-                                         meta.get("running_heads", []), meta.get("shaped_blocks", False))  # academic flag also goes to assemble()
+                                         meta.get("running_heads", []), meta.get("shaped_blocks", False),
+                                         set(meta.get("picture_pages", [])))  # academic flag also goes to assemble()
     # Everything after the book's last content page is left out: an index not in the contents (its page numbers would be
     # wrong in our layout), endpapers and the back cover (Dāmodara-jananī: General Index from scan page 462)
     if last := meta.get("last_page"):
