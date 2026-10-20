@@ -41,9 +41,11 @@ def reader_running() -> bool:
 
 
 def clock(seconds: float) -> str:
-    """Seconds as m:ss, or h:mm:ss from an hour up."""
+    """A countdown with its units spelled out ("4 min 25 s", "1 h 05 min"), so it is not mistaken for a time of day."""
     s = max(0, int(seconds))
-    return f"{s // 3600}:{s % 3600 // 60:02d}:{s % 60:02d}" if s >= 3600 else f"{s // 60}:{s % 60:02d}"
+    if s >= 3600:
+        return f"{s // 3600} h {s % 3600 // 60:02d} min"
+    return f"{s // 60} min {s % 60:02d} s" if s >= 60 else f"{s} s"
 
 
 def cooldown_mode(working: bool) -> tuple[str, float | None]:
