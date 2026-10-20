@@ -8,6 +8,7 @@ import local_env
 
 import json
 import os
+import statistics
 import subprocess
 import time
 from datetime import datetime
@@ -79,14 +80,17 @@ def heat(celsius: float) -> str:
 
 
 def cpu_temperature() -> float | None:
-    """Windows' ACPI thermal zone in °C — the nearest thing to a CPU temperature a laptop gives without admin rights or extra tools."""
+    """Windows' ACPI thermal zone in °C — the nearest thing to a CPU temperature a laptop gives without admin rights or extra tools.
+    The CPU reading jumps about 25 °C within seconds of any short burst of work (a measured fact: 60 → 85 °C in 4 s and back in 1–2 s),
+    and starting PowerShell is such a burst — so it takes five readings a second apart, drops the first and reports the median."""
     if os.name != "nt":
         return None
     try:
-        out = subprocess.run(["powershell", "-NoProfile", "-Command", r"(Get-Counter '\Thermal Zone Information(*)\Temperature').CounterSamples | ForEach-Object { $_.CookedValue }"],
-                             capture_output=True, text=True, timeout=15).stdout.split()
+        out = subprocess.run(["powershell", "-NoProfile", "-Command", r"(Get-Counter '\Thermal Zone Information(*)\Temperature' -SampleInterval 1 -MaxSamples 5).CounterSamples | ForEach-Object { $_.CookedValue }"],
+                             capture_output=True, text=True, timeout=30).stdout.split()
         kelvin = [float(x) for x in out if x.replace(".", "", 1).isdigit()]
-        return max(kelvin) - 273.15 if kelvin else None
+        readings = kelvin[1:] if len(kelvin) > 1 else kelvin  # the first reading is taken right after the burst of starting PowerShell
+        return statistics.median(readings) - 273.15 if readings else None
     except (OSError, ValueError, subprocess.TimeoutExpired):
         return None
 
