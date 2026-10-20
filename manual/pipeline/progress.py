@@ -1,7 +1,7 @@
 # manual/pipeline/progress.py
 # A read-only progress view of the whole batch: for every book its stage (read, assembled, drafts built, published), the pages read
-# with speed and time left while the OCR runs, and whether the page reader is working. It changes nothing; --watch refreshes it.
-# Usage: poetry run python manual/pipeline/progress.py --library <path/to/book-library> --inputs <folder with the scans> [--watch 10]
+# with speed and time left while the OCR runs, and whether the page reader is working. It changes nothing; --watch refreshes it (every 120 s unless a number of seconds follows).
+# Usage: poetry run python manual/pipeline/progress.py --library <path/to/book-library> --inputs <folder with the scans> [--watch [seconds]]
 
 import sys; sys.dont_write_bytecode = True  # keep pipeline/ free of __pycache__ clutter
 import local_env
@@ -19,6 +19,7 @@ import power
 
 RECENT = 12  # newest page files used to estimate the reading speed
 STALE_MIN = 10  # minutes without a new page before reading counts as stopped
+WATCH_SECONDS = 120  # --watch refreshes this often unless told otherwise
 
 
 def option(flag: str) -> str | None:
@@ -195,7 +196,7 @@ def main() -> None:
     if watch is None:
         print(render())
         return
-    wait = int(watch) if watch.isdigit() else 10
+    wait = int(watch) if watch.isdigit() else WATCH_SECONDS
     try:
         while True:
             os.system("cls" if os.name == "nt" else "clear")
