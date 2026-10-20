@@ -175,7 +175,8 @@ def render() -> str:
     inputs = Path(option("--inputs")).expanduser().resolve() if option("--inputs") else None
     scans = {p.stem: p for p in sorted(inputs.glob("*.pdf"))} if inputs and inputs.is_dir() else {}
     totals = {key: pdf_pages(path) for key, path in scans.items()}
-    keys = sorted(set(meta) | set(scans), key=lambda k: (totals.get(k) is None, totals.get(k) or 0, k))  # smallest first
+    batch_keys = set(scans) if scans else set(meta)  # given a batch folder, only that batch's books (the library's settings cover every batch)
+    keys = sorted(batch_keys, key=lambda k: (totals.get(k) is None, totals.get(k) or 0, k))  # smallest first
     working = reader_running()
     mode, rest_left = cooldown_mode(working)
     battery = power.battery()
