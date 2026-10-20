@@ -284,13 +284,27 @@ def contents_rows(blocks, pages: list, plain_lines: bool = False) -> list[tuple[
     """The contents pages as rows of (first cell's HTML, cells), whatever their shape: table rows; paragraph entries
     ("<b>Title</b> ..... 139<br/>Śrīmad-Bhāgavatam 10.9.7–10", one row per line); and "CHAPTER FOUR" printed as a heading.
     Dotted leaders are dropped from titles."""
-    rows = []
+    rows, part_label = [], ""
     for b in blocks:
         if b["page"] not in pages:
             continue
         # A contents page printed as plain lines ("Foreword by Radhanath Swami ix", "Chapter 1: Arriving on the Scene 1")
         if plain_lines and b["label"] in ("Text", "SectionHeader", "TableOfContents") and plain(b["text"]).strip().lower() != "contents":
             for line in (ln.strip(" —–-") for ln in plain(b["text"]).split("\n") if ln.strip(" —–-")):
+                # "PART 2:" on one line, its title on the next: one "Part 2: Title" row
+                if (pm := re.fullmatch(r"part\s+(\d+)\s*:?", line, re.I)):
+                    part_label = f"Part {pm.group(1)}: "
+                    continue
+                if part_label:
+                    line, part_label = part_label + line, ""
+                # "Title ..... 75" — dotted leaders, then the page
+                if (lm := LEADER_RE.match(line)) and lm.group(2):
+                    rows.append((line, [lm.group(1), lm.group(2)]))
+                    continue
+                # A bare label ("CHAPTER 1") is not "title + page 1": its title follows on the next lines
+                if TOC_LABEL_RE.match(line):
+                    rows.append((line, [line]))
+                    continue
                 # "Title 17" — or the page first, "17 WITHOUT FEAR" (Without Fear)
                 m = re.match(r"^(.*?\S)\s+(\d{1,3}|[ivxlc]+)$", line)
                 first = re.match(r"^(\d{1,3}|[ivxlc]+)\s+(\S.*)$", line)
@@ -367,8 +381,8 @@ def read_contents(blocks, keep: set = frozenset(), pages: list = None, subentrie
         if in_chapter and not page and table and not table[-1].get("subtitle") and (not pages or re.search(r"\d", cells[0])):
             table[-1]["subtitle"] = cells[0]
             continue
-        if pages and not page and not TOC_LABEL_RE.match(cells[0]):
-            continue  # plain-text contents: a line without a page is a running head or a stray, not an entry
+        if pages and not page and not TOC_LABEL_RE.match(cells[0]) and not TOC_PART_RE.match(cells[0]):
+            continue  # plain-text contents: a line without a page is a running head or a stray, not an entry (a Part may have none)
         if in_chapter and page and cells[0] not in keep and not TOC_CHAPTER_RE.match(cells[0]):
             continue
         if page and TOC_LABEL_RE.match(cells[0]):
@@ -435,8 +449,13 @@ def title_ratio(heading: str, listed: str) -> float:
         best = 1.0
     # A page heading that is the contents title plus a description ("… 2.2.205" / "… 2.2.205 on the role of karma and jñāna")
     bare = ascii_key(re.sub(r"^chapter\s+\d+\s*", "", listed, flags=re.I))
-    if len(bare) >= 12 and any(ascii_key(x).startswith(bare) for x in headings):
-        best = max(best, 0.95)
+    for x in headings:
+        hk = ascii_key(x)
+        dated = bool(re.search(r"\([^)]*\d{3,4}[^)]*\)", x))  # "Bombay (March 22 – May 4, 1977)": a short title followed by its dates
+        # a long title may be followed by anything; a short one only by dates, and then a slightly different spelling is allowed
+        if (len(bare) >= 12 and hk.startswith(bare)) or (dated and len(bare) >= 5 and (
+                hk.startswith(bare) or difflib.SequenceMatcher(None, hk[:len(bare) + 1], bare).ratio() >= 0.9)):
+            best = max(best, 0.95)
     return best
 
 
@@ -717,6 +736,9 @@ def assemble(blocks, contents, unnumbered: set, dropped: set, front_prefixes: tu
         if blk["label"] == "Text" and blk["shape"] == "inset" and not is_all_italic(blk["text"]):
             add_block(current, {"type": "blockquote", "text": join_lines(blk["text"]), "page": blk["page"]})
             continue
+        if blk["label"] == "Text" and blk["page"] in opts.get("list_pages", ()):  # a list of titles: one item per block, never glued
+            add_block(current, {"type": "entry", "text": join_lines(blk["text"]), "page": blk["page"]})
+            continue
         if blk["label"] == "Text" and blk["shape"] == "right":  # a signature block: the name, then its place and date lines
             for n, line in enumerate(ln for ln in blk["text"].split("\n") if plain(ln)):
                 add_block(current, {"type": "sign" if n == 0 else "sign-detail", "text": plain(line)})
@@ -919,7 +941,8 @@ def main():
     academic = meta.get("academic", False)
     italic_prose = meta.get("italic_prose", False)
     inserted = meta.get("insert_sections", [])
-    opts = {"ocr_tables": meta.get("ocr_tables", False), "gallery": {x["title"] for x in inserted if x.get("gallery")}}
+    opts = {"ocr_tables": meta.get("ocr_tables", False), "gallery": {x["title"] for x in inserted if x.get("gallery")},
+            "list_pages": set(meta.get("list_pages", []))}  # pages whose short lines are list items (a list of titles)
 
     def attempt(cont, op, ins, bl=None):
         return assemble(blocks if bl is None else bl, cont, unnumbered, dropped, front_prefixes, academic, italic_prose, ins, op)
@@ -948,6 +971,9 @@ def main():
         if s.title in meta.get("title_fixes", {}):
             fixes.append(f"      title: '{s.title}' → '{meta['title_fixes'][s.title]}'")
             s.title = meta["title_fixes"][s.title]
+        # "Bombay(March 22 – May 4, 1977)": a title with its dates in brackets shows the dates as its subtitle
+        if s.kind == "chapter" and not s.subtitle and (m := re.match(r"^(.*?\S)\s*\(([^()]*\d{3,4}[^()]*)\)$", s.title)):
+            s.title, s.subtitle = m.group(1), m.group(2).strip()
 
     # Captions the OCR swallowed into the picture box (checked against the scan) come from book_meta.json
     for s in sections:

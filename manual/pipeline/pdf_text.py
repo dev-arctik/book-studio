@@ -21,10 +21,29 @@ BALARAM = str.maketrans({
 })
 
 
+BALARAM_FONTS: set[str] = set()  # fonts of this book that carry Balaram's stand-in letters, set by pdf_to_book via balaram_fonts()
+
+
+def balaram_fonts(pdf) -> set[str]:
+    """Fonts whose text is full of å ë ñ ç (letters English never uses): they hold Balaram-style stand-ins ("Kåñëa"), whatever
+    the font is called, so their text is decoded."""
+    seen = Counter()
+    for page in pdf:
+        for block in page.get_text("dict")["blocks"]:
+            for ln in block.get("lines", []):
+                for s in ln["spans"]:
+                    seen[s["font"]] += len(re.findall(r"[åëñçÅËÑÇ]", s["text"]))
+    return {font for font, n in seen.items() if n >= 20}
+
+
 def span_text(span: dict) -> str:
-    text = re.sub(r"[\x00-\x08\x0b-\x1f]", "", span["text"].replace("​", ""))  # control characters some PDFs hide in the text (a stray \x08)
-    # "Gaudiya" (Gaudiya Press / Tattva Vicara books) uses the very same stand-in letters as "Balaram"
-    return text.translate(BALARAM) if span["font"].startswith(("Balaram", "Gaudiya")) else text
+    raw = span["text"].replace("​", "")
+    if "\x03" in raw:  # a font without a text map: codes are 29 below the real letters, and "space" is code 3 ("WR\x03" = "to ")
+        raw = "".join(chr(ord(c) + 29) if 3 <= ord(c) <= 100 else "é" if c == "Þ" else c for c in raw)
+    text = re.sub(r"[\x00-\x08\x0b-\x1f]", "", raw)  # control characters some PDFs hide in the text (a stray \x08)
+    # "Gaudiya" (Gaudiya Press / Tattva Vicara books) uses the very same stand-in letters as "Balaram"; so does any font found by
+    # balaram_fonts() (ScaGoudy, TimesLTMM…), which pdf_to_book sets per book
+    return text.translate(BALARAM) if span["font"].startswith(("Balaram", "Gaudiya")) or span["font"] in BALARAM_FONTS else text
 
 
 def page_blocks_text(page) -> list[str]:
@@ -37,6 +56,29 @@ def page_blocks_text(page) -> list[str]:
             out.append(text)
     return out
 
+
+DROP_FONTS: tuple = ()  # font-name prefixes whose text is decoration (a faded mantra used as page background), set per book
+BOLD_PARA_PAGES: set[int] = set()  # pages (0-based) where a line opening with a bold term starts a new paragraph (a glossary)
+PAGE_SHIFT: dict[int, float] = {}  # per page (0-based): points added to every x, so mirrored facing pages share one left margin
+
+
+def page_shifts(pdf) -> dict[int, float]:
+    """Facing pages are often mirrored: body text starts at x=47 on left pages and x=54 on right ones, which breaks the first-line
+    indent test. Each page's own margin (its most common body-line start) is moved to the book's most common one; pages with too
+    few lines to tell, or a shift over 10 pt (an indented verse page), are left alone."""
+    sizes = Counter()
+    for page in pdf:
+        for l in page_lines(page):
+            sizes[l["size"]] += len(l["text"])
+    body = sizes.most_common(1)[0][0]
+    per_page, overall = {}, Counter()
+    for page in pdf:
+        starts = Counter(round(l["x0"]) for l in page_lines(page) if l["size"] == body)
+        if sum(starts.values()) >= 8:
+            per_page[page.number] = starts.most_common(1)[0][0]
+            overall[per_page[page.number]] += 1
+    target = overall.most_common(1)[0][0]
+    return {n: target - x for n, x in per_page.items() if 0 < abs(target - x) <= 10}
 
 RUNNING_HEADS: set[str] = set()  # texts printed at the very top of many pages, set per book by pdf_to_book via running_heads()
 TOP_BAND = 0.07  # a running head sits within this share of the page height from the top
@@ -61,7 +103,7 @@ def page_lines(page) -> list[dict]:
         for ln in block.get("lines", []):
             spans = [{"text": span_text(s), "size": round(s["size"], 1),
                       "bold": bool(s["flags"] & 16) or "Bold" in s["font"], "italic": bool(s["flags"] & 2) or "Italic" in s["font"]}
-                     for s in ln["spans"] if not s["font"].startswith("Type3")]  # Type3 = the Hindi PDF's page-number font
+                     for s in ln["spans"] if not s["font"].startswith("Type3") and not s["font"].startswith(DROP_FONTS)]  # Type3 = the Hindi PDF's page-number font
             text = "".join(s["text"] for s in spans).strip()
             if not text or (re.fullmatch(r"\d{1,3}|[IVXLCivxlc]{1,6}", text) and ln["bbox"][1] > 0.9 * page.rect.height):
                 continue
@@ -71,7 +113,8 @@ def page_lines(page) -> list[dict]:
             for s in spans:
                 sizes[s["size"]] += len(s["text"].strip())
             size = sizes.most_common(1)[0][0]
-            lines.append({"spans": spans, "text": text, "size": size, "y": ln["bbox"][1], "x0": ln["bbox"][0], "x1": ln["bbox"][2]})
+            shift = PAGE_SHIFT.get(page.number, 0)
+            lines.append({"spans": spans, "text": text, "size": size, "y": ln["bbox"][1], "x0": ln["bbox"][0] + shift, "x1": ln["bbox"][2] + shift})
     return sorted(lines, key=lambda l: l["y"])
 
 
@@ -146,6 +189,12 @@ def paragraphs(pages: list[list[dict]], body: float, pitch: float, right: float,
                         new = False
                     elif lines[i - 1]["text"].rstrip().endswith("]"):
                         new = True
+            # A glossary (pages named in book_meta.json): every entry starts with its bold term, on a new line right after the
+            # previous entry's last — nothing else (no indent, no gap) tells the entries apart
+            first = next((s for s in l["spans"] if s["text"].strip()), None)
+            if (not new and i > 0 and page_no in BOLD_PARA_PAGES and first and first["bold"] and "object" not in lines[i - 1]
+                    and lines[i - 1]["text"].rstrip().endswith((".", "!", "?", ")", "”", "’"))):
+                new = True
             if new:
                 paras.append({"kind": kind, "runs": [], "text": "", "page": page_no, "x0": l.get("x0", 0), "x1": l.get("x1", 0), "bullet": l.get("bullet", False)})
                 last = paras[-1]

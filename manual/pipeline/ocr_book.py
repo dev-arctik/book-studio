@@ -118,8 +118,27 @@ def main():
     total = len(pdfium.PdfDocument(str(pdf_path)))
     first, last = (int(sys.argv[2]), int(sys.argv[3])) if len(sys.argv) > 3 else (1, total)
     low = lambda pct: print(f"Battery at {pct}% — paused until the charger is plugged in…", flush=True)  # noqa: E731
+    todo = [n for n in range(first, last + 1) if not page_done(out_dir / f"page-{n:03d}.json")]
+    marker = local_env.WORKSPACE_DIR / ".last-ocr-finished"  # its time = when the last book's reading ended
+    state_file = local_env.WORKSPACE_DIR / ".reading-state"  # what the OCR is doing now (working / resting + countdown), for progress.py
+    state = {"work_start": time.time()}
+
+    def after_batch(_):
+        power.wait_for_power(low, lambda: print("Power back — continuing", flush=True))
+        more = any(not page_done(out_dir / f"page-{n:03d}.json") for n in range(first, last + 1))
+        state["work_start"] = power.rest_if_due(state["work_start"], more, state_file)
+
     with power.keep_awake():
-        ocr_all(pdf_path, out_dir, first, last, after_chunk=lambda _: power.wait_for_power(low, lambda: print("Power back — continuing", flush=True)))
+        try:
+            if todo:
+                power.rest_between_books(marker, state_file)  # a cool-down after the last book, before this one is read
+                state["work_start"] = time.time()
+                power.work_state(state_file)
+            ocr_all(pdf_path, out_dir, first, last, after_chunk=after_batch)
+            if todo:
+                marker.touch()  # reading of this book is finished: the next book waits out its rest
+        finally:
+            state_file.unlink(missing_ok=True)  # not reading any more
 
 
 if __name__ == "__main__":

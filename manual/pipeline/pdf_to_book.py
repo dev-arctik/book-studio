@@ -15,7 +15,7 @@ from collections import Counter
 import pymupdf
 
 import pdf_text
-from pdf_text import body_metrics, indent_band, page_lines, paragraphs, running_heads
+from pdf_text import balaram_fonts, body_metrics, indent_band, page_lines, paragraphs, running_heads
 
 META_FILE = local_env.META_FILE
 SKIP_SECTIONS = {"title page", "copyright", "contents", "table of contents"}  # we build our own title page and contents
@@ -23,6 +23,7 @@ TABLE_SIZE = 0.7  # lines printed smaller than this × body size are table text 
 ROW_GAP = 10  # pt — table lines further apart than this start a new row (lines inside one cell sit ~7.5 pt apart)
 COLUMN_GAP = 20  # pt — line starts further apart than this belong to different columns
 PICTURE_SHARE = 0.05  # pictures smaller than this share of the page are icons (bullet check marks)
+BULLET_MIN_SIZE = 0  # pt — icons smaller than this (either side) are not bullets; book_meta.json "bullet_min_size" sets it per book
 
 
 def runs_text(runs: list[dict], body: float) -> str:
@@ -80,15 +81,20 @@ def page_items(page, body: float, margin: float) -> list[dict]:
     # A decorated initial ("W" set large) belongs at the start of the line beside it ("HEN I FIRST JOINED…"); that first line,
     # set in small capitals, is body text
     for drop in [l for l in lines if len(l["text"]) == 1 and l["size"] >= 2 * body]:
-        beside = [l for l in lines if l is not drop and l["x0"] > drop["x0"] and abs(l["y"] - drop["y"]) < 3]
+        beside = [l for l in lines if l is not drop and l["x0"] > drop["x0"] and abs(l["y"] - drop["y"]) < max(3, 0.5 * drop["size"])]  # a tall cap starts above its line
         if beside:
             beside[0]["spans"][0] = {**beside[0]["spans"][0], "text": drop["text"] + beside[0]["spans"][0]["text"]}
             beside[0]["text"] = drop["text"] + beside[0]["text"]
             beside[0]["size"] = body
+            # the lines wrapped around the cap start further in than the paragraph does: put them back at the cap's own margin
+            for l in lines:
+                if l is not drop and l["x0"] > drop["x0"] and 0 <= l["y"] - drop["y"] < drop["size"]:
+                    l["x0"] = drop["x0"]
             lines.remove(drop)
     # Check-mark icons mark list items: the line level with an icon, to its right, starts an item
     icons = [b["bbox"] for b in page.get_text("dict")["blocks"] if b["type"] == 1
-             and (b["bbox"][2] - b["bbox"][0]) * (b["bbox"][3] - b["bbox"][1]) < PICTURE_SHARE * w * h]
+             and (b["bbox"][2] - b["bbox"][0]) * (b["bbox"][3] - b["bbox"][1]) < PICTURE_SHARE * w * h
+             and min(b["bbox"][2] - b["bbox"][0], b["bbox"][3] - b["bbox"][1]) >= BULLET_MIN_SIZE]  # (decoration drawn as thousands of tiny images is not a bullet)
     for l in lines:
         l["bullet"] = any(abs(l["y"] - (y0 + y1) / 2) < 8 and l["x0"] >= x1 for x0, y0, x1, y1 in icons)
     items = [l for l in lines if l["size"] >= TABLE_SIZE * body]
@@ -196,6 +202,16 @@ def convert(book: str) -> None:
     pdf_path = local_env.find_book(book)
     book = pdf_path.stem  # the key in output/ and book_meta.json, whether given as a path or a name
     pdf = pymupdf.open(pdf_path)
+    meta = json.loads(META_FILE.read_text(encoding="utf-8")).get(book, {}) if META_FILE.is_file() else {}
+    pdf_text.DROP_FONTS = tuple(meta.get("drop_fonts", []))  # decoration set in its own font (a faded mantra behind the text)
+    global BULLET_MIN_SIZE
+    BULLET_MIN_SIZE = meta.get("bullet_min_size", 0)
+    pdf_text.BALARAM_FONTS = balaram_fonts(pdf)  # fonts holding Balaram-style stand-in letters are decoded, whatever their name
+    if meta.get("bold_paragraph_pages"):  # [first, last] scan pages of a glossary: each bold term opens an entry
+        first_pg, last_pg = meta["bold_paragraph_pages"]
+        pdf_text.BOLD_PARA_PAGES = set(range(first_pg - 1, last_pg))
+    if meta.get("mirrored_pages"):  # facing pages with mirrored margins: align each page's margin before measuring indents
+        pdf_text.PAGE_SHIFT = pdf_text.page_shifts(pdf)
     outline = clean_outline([(t.strip(), p) for level, t, p in pdf.get_toc() if level == 1])
     pdf_text.RUNNING_HEADS = running_heads(pdf)  # the book's own running heads are dropped from its text
     body, pitch, right = body_metrics([page_lines(p) for p in pdf])
@@ -209,10 +225,20 @@ def convert(book: str) -> None:
 
     # Per-book settings (book_meta.json): "drop_sections" — outline titles left out (a page-number index means nothing once the
     # book is reflowed); "skip_pages" — scan pages left out (the publisher's back cover)
-    meta = json.loads(META_FILE.read_text(encoding="utf-8")).get(book, {}) if META_FILE.is_file() else {}
     skip_titles = SKIP_SECTIONS | {t.lower() for t in meta.get("drop_sections", [])}
     skip_pages = set(meta.get("skip_pages", []))
     paras = [p for p in paras if p["page"] + 1 not in skip_pages]
+    # "skip_pictures": pages whose pictures are decoration (a page-sized faded overlay) — the text stays. "picture_pages": pages set
+    # as one full-width picture, whatever else is on them (a full-page painting that opens a part)
+    skip_pictures, picture_pages = set(meta.get("skip_pictures", [])), sorted(meta.get("picture_pages", []))
+    paras = [p for p in paras if not (p["kind"] == "object" and p["object"]["type"] == "figure" and p["page"] + 1 in skip_pictures)]
+    if picture_pages:
+        paras = [p for p in paras if p["page"] + 1 not in picture_pages]
+        for pg in picture_pages:
+            w, h = pdf[pg - 1].rect.width, pdf[pg - 1].rect.height
+            paras.append({"kind": "object", "runs": [], "text": "", "page": pg - 1, "object": {
+                "type": "figure", "page": pg, "bbox": [0, 0, w, h], "image_bbox": [0, 0, w, h], "caption": "", "wide": True}})
+        paras.sort(key=lambda p: p["page"])  # a stable sort: the order within a page is kept
 
     sections = []
     for i, (title, page, kind, lead) in enumerate(outline):
@@ -259,7 +285,8 @@ def convert(book: str) -> None:
             words = [r for r in p["runs"] if not r.get("break") and r["text"].strip()]
             italic = bool(words) and all(r["italic"] for r in words)
             if p["kind"] != "p" or (sec["title"] == "Notes" and re.fullmatch(r"(Foreword|Introduction|Chapter \d+|Concluding Words)", p["text"])):
-                sec["blocks"].append({"type": "h", "text": flat})  # in Notes: the chapter each group of notes belongs to
+                if re.sub(r"\W", "", flat.lower()) != re.sub(r"\W", "", sec["title"].lower()):  # (not the section's own title again)
+                    sec["blocks"].append({"type": "h", "text": flat})  # in Notes: the chapter each group of notes belongs to
             elif p["bullet"]:  # "In this chapter you will learn:" items, printed after a check-mark icon
                 sec["blocks"].append({"type": "entry", "text": "• " + flat})
             elif re.fullmatch(r"\[.*\]", p["text"].strip()):
