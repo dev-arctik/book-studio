@@ -164,7 +164,7 @@ def section_of(title: str, page: int) -> dict:
     if m := re.match(r"^(\d+)\s*:\s*(.+)$", title):
         return {"kind": "chapter", "title": m.group(2).strip(), "start_page": page}
     first = title.split(":")[0].split("&")[0].strip().lower()
-    kind = "front" if first in ("foreword", "introduction", "dedication", "preface", "acknowledgements", "acknowledgments") else "back"
+    kind = "front" if first in ("foreword", "introduction", "dedication", "preface", "acknowledgements", "acknowledgments", "maṅgalācaraṇa") else "back"
     return {"kind": kind, "title": title, "start_page": page}
 
 
@@ -210,11 +210,17 @@ def convert(book: str) -> None:
     if meta.get("bold_paragraph_pages"):  # [first, last] scan pages of a glossary: each bold term opens an entry
         first_pg, last_pg = meta["bold_paragraph_pages"]
         pdf_text.BOLD_PARA_PAGES = set(range(first_pg - 1, last_pg))
+    pdf_text.FIRST_INDENT_MAX = meta.get("first_indent_max", pdf_text.FIRST_INDENT_MAX)
     if meta.get("mirrored_pages"):  # facing pages with mirrored margins: align each page's margin before measuring indents
         pdf_text.PAGE_SHIFT = pdf_text.page_shifts(pdf)
     outline = clean_outline([(t.strip(), p) for level, t, p in pdf.get_toc() if level == 1])
+    if not outline and meta.get("sections"):  # "sections": [["1: Title", first PDF page], …] — for a digital PDF without an outline (the chapters are found on its pages)
+        outline = [(t, p, "", "") for t, p in meta["sections"]]
     pdf_text.RUNNING_HEADS = running_heads(pdf)  # the book's own running heads are dropped from its text
     body, pitch, right = body_metrics([page_lines(p) for p in pdf])
+    if meta.get("normalise_sizes"):  # chapters with their own body size (17 pt, 14 pt…): every page is scaled to the book's most common size
+        pdf_text.PAGE_SCALE = pdf_text.page_scales(pdf, body)
+        body, pitch, right = body_metrics([page_lines(p) for p in pdf])
     # The body's left edge, for this book's first-line indents (paragraphs are not separated by a gap)
     starts = Counter(round(l["x0"]) for p in pdf for l in page_lines(p) if l["size"] == body)
     margin = starts.most_common(1)[0][0]
@@ -259,13 +265,18 @@ def convert(book: str) -> None:
         enlarged = lambda p: (sec["kind"] != "front" and p["kind"] == "p" and abs((p["x0"] + p.get("x1", 0)) / 2 - centre) < 8 and p["runs"]  # noqa: E731
                               and all(r.get("break") or not r["text"].strip() or r["size"] >= body + 0.9 for r in p["runs"]))
         popped = []
-        while mine and (mine[0]["kind"] not in ("p", "object") or enlarged(mine[0])):
+        while not meta.get("no_title_block") and mine and (mine[0]["kind"] not in ("p", "object") or enlarged(mine[0])):  # "no_title_block": chapters start straight with their first story, no title page
             head = mine.pop(0)
             popped.append(re.sub(r"\s+", " ", " ".join(r["text"].strip() for r in head["runs"] if not r.get("break"))).strip())
             author = " ".join(r["text"].strip() for r in head["runs"] if not r.get("break") and r.get("italic") and r["text"].strip())
             if author:
                 sec["subtitle"] = re.sub(r"\s+", " ", author)
-        if not sec["subtitle"] and len(popped) >= 3:  # "Chapter One" / "Nāma-Aparādha" / "The Ten Offences…": the last line is the subtitle
+        popped = [re.sub(r"(?<=\w) ’ (?=\w)", "’", re.sub(r"“ | ”", lambda m: m.group().strip(), p)).replace(" – ", "–") for p in popped]  # Word's loose spacing around quotes and dashes
+        dated = next((j for j, p in enumerate(popped) if j >= 2 and re.search(r"\b(1[89]\d\d|20\d\d)\b|\d0’?s\b", p)), None)
+        if not sec["subtitle"] and popped and re.fullmatch(r"chapter\s+\d+", popped[0], re.I) and dated:  # "CHAPTER 8" / title / "VRINDAVAN 1973–1974" / first heading
+            sec["subtitle"] = popped[dated]
+            sec["blocks"] += [{"type": "h", "text": p} for p in popped[dated + 1:]]  # lines after the place and date open the chapter's text
+        elif not sec["subtitle"] and len(popped) >= 3:  # "Chapter One" / "Nāma-Aparādha" / "The Ten Offences…": the last line is the subtitle
             last = popped[-1]
             same_as_title = re.sub(r"\W", "", last.lower()) == re.sub(r"\W", "", sec["title"].lower())
             if last and not same_as_title and not LABEL_RE.match(last) and not re.fullmatch(r"part\s+\w+", last, re.I):
@@ -281,7 +292,7 @@ def convert(book: str) -> None:
                 continue
             if drop:
                 text, drop = drop + text, ""
-            flat = text.replace("\n", " ")
+            flat = re.sub(r"(?<=\S) {2,}", " ", text.replace("\n", " "))  # Word text carries doubled spaces
             words = [r for r in p["runs"] if not r.get("break") and r["text"].strip()]
             italic = bool(words) and all(r["italic"] for r in words)
             if p["kind"] != "p" or (sec["title"] == "Notes" and re.fullmatch(r"(Foreword|Introduction|Chapter \d+|Concluding Words)", p["text"])):
@@ -297,6 +308,19 @@ def convert(book: str) -> None:
                 sec["blocks"].append({"type": "blockquote", "text": flat})
             else:
                 sec["blocks"].append({"type": "p", "text": flat})
+        # A paragraph cut by a picture or a page break ("There was this" / picture / "burden of karma…") is one paragraph again:
+        # a plain paragraph that opens lowercase joins the earlier plain paragraph that stopped mid-sentence
+        joined, last_p = [], None
+        for blk in sec["blocks"]:
+            if blk["type"] == "p" and last_p is not None and blk["text"][:1].islower() and not re.search(r"[.!?:;”’)\]>]\s*$", last_p["text"]):
+                last_p["text"] += " " + blk["text"]
+                continue
+            joined.append(blk)
+            if blk["type"] == "p":
+                last_p = blk
+            elif blk["type"] not in ("figure", "table"):
+                last_p = None
+        sec["blocks"] = joined
         sec["blocks"] = [{k: v for k, v in b.items() if k != "top"} for b in merge_tables(sec["blocks"])]
         sections.append(sec)
 

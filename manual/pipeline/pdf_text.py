@@ -59,6 +59,8 @@ def page_blocks_text(page) -> list[str]:
 
 DROP_FONTS: tuple = ()  # font-name prefixes whose text is decoration (a faded mantra used as page background), set per book
 BOLD_PARA_PAGES: set[int] = set()  # pages (0-based) where a line opening with a bold term starts a new paragraph (a glossary)
+FIRST_INDENT_MAX = 25  # pt — a line this far right of the margin or less is a paragraph's first-line indent; book_meta.json "first_indent_max" sets it per book (a Word book indents 35 pt)
+PAGE_SCALE: dict[int, float] = {}  # per page (0-based): factor for every font size — a book that sets each chapter's body text at its own size (17 pt, then 14 pt) reads as one size
 PAGE_SHIFT: dict[int, float] = {}  # per page (0-based): points added to every x, so mirrored facing pages share one left margin
 
 
@@ -114,8 +116,26 @@ def page_lines(page) -> list[dict]:
                 sizes[s["size"]] += len(s["text"].strip())
             size = sizes.most_common(1)[0][0]
             shift = PAGE_SHIFT.get(page.number, 0)
+            if page.number in PAGE_SCALE:
+                size = round(size * PAGE_SCALE[page.number], 1)
+                spans = [{**s, "size": round(s["size"] * PAGE_SCALE[page.number], 1)} for s in spans]
             lines.append({"spans": spans, "text": text, "size": size, "y": ln["bbox"][1], "x0": ln["bbox"][0] + shift, "x1": ln["bbox"][2] + shift})
     return sorted(lines, key=lambda l: l["y"])
+
+
+def page_scales(pdf, body: float) -> dict[int, float]:
+    """Per page: the factor that brings that page's own body size (its most common, by characters) to the book's 'body' — only for
+    pages within a third of it and more than 4% off, so a page of headings or small print is never rescaled."""
+    scales = {}
+    for page in pdf:
+        sizes = Counter()
+        for l in page_lines(page):
+            sizes[l["size"]] += len(l["text"])
+        if sizes:
+            factor = body / sizes.most_common(1)[0][0]
+            if 0.75 < factor < 1.34 and abs(factor - 1) > 0.04:
+                scales[page.number] = factor
+    return scales
 
 
 def body_metrics(pages: list[list[dict]]) -> tuple[float, float, float]:
@@ -144,7 +164,7 @@ def kind_of(size: float, body: float) -> str:
 
 def indent_band(x0: float, margin: float) -> int:
     """0 = at the left margin, 1 = a paragraph's indented first line, 2 = an indented block (verse, list item, citation)."""
-    return 0 if x0 < margin + 5 else 1 if x0 < margin + 25 else 2
+    return 0 if x0 < margin + 5 else 1 if x0 < margin + FIRST_INDENT_MAX else 2
 
 
 def paragraphs(pages: list[list[dict]], body: float, pitch: float, right: float, margin: float | None = None,
