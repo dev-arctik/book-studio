@@ -261,6 +261,7 @@ def convert(book: str) -> None:
     pdf_text.BULLET_FONTS = tuple(meta.get("bullet_fonts", []))
     pdf_text.PAGE_NUMBER_BAND = meta.get("page_number_band", pdf_text.PAGE_NUMBER_BAND)
     pdf_text.NUMBERED_ITEMS = bool(meta.get("numbered_items"))
+    pdf_text.HEAL_ENGLISH = bool(meta.get("heal_hyphens"))
     pdf_text.HEADING_EXTRA = meta.get("heading_extra", pdf_text.HEADING_EXTRA)
     if meta.get("mirrored_pages"):  # facing pages with mirrored margins: align each page's margin before measuring indents
         pdf_text.PAGE_SHIFT = pdf_text.page_shifts(pdf)

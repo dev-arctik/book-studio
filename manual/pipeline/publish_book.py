@@ -11,7 +11,7 @@ import shutil
 
 def publish(book: str, batch=None) -> None:
     drafts = {"PDF": local_env.stage_dir(book, "clean-pdf") / f"{book}.pdf", "EPUB": local_env.stage_dir(book, "epub") / f"{book}.epub"}
-    missing = [f"{kind} ({path})" for kind, path in drafts.items() if not path.is_file()]
+    missing = [f"{kind} ({path})" for kind, path in drafts.items() if not local_env.win_long(path).is_file()]
     if missing:
         sys.exit(f"Not ready: no draft for {', '.join(missing)} — run run_book.py first")
     for path in drafts.values():

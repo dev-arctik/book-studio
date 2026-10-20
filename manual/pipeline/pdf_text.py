@@ -69,6 +69,9 @@ FIRST_INDENT_MAX = 25  # pt — a line this far right of the margin or less is a
 BULLET_FONTS: tuple = ()  # font-name prefixes of a dingbat font whose letters are bullet marks ("O" = a round bullet): book_meta.json "bullet_fonts"
 PAGE_NUMBER_BAND = 0.9  # a bare number below this share of the page height is a page number; "page_number_band" in book_meta.json (a number in a box a little higher)
 HEADING_EXTRA = 2.5  # pt above the body size from which a line is a heading; book_meta.json "heading_extra" (a book whose subheadings are only 2 pt bigger, in bold)
+HEAL_ENGLISH = False  # book_meta.json "heal_hyphens": see heal_hyphens()
+SHORT_WORDS = {"all", "one", "two", "non", "not", "god", "her", "his", "our", "its", "the", "man", "men", "big", "day", "new", "old", "out", "who", "how", "low", "sun", "ill", "few", "way", "law", "sex", "pro", "any", "ten", "six", "far", "top", "end", "age", "fifth", "third", "tenth", "semi", "anti", "half", "well", "ever", "high", "long", "free", "full", "good", "life", "love", "hand", "head", "mind", "soul", "body", "dog", "hog"}  # real words a hyphen follows
+SUFFIXES = {"ly", "ing", "ed", "er", "ers", "es", "ful", "less", "able", "ally", "ous", "ity", "ness", "ment", "ments", "tion", "tions", "ation", "ations", "ize", "ized", "ate", "ence", "ance", "ive", "al", "ism", "ist", "ists"}
 NUMBERED_ITEMS = False  # book_meta.json "numbered_items": every line opening with "N. " starts a paragraph
 DROP_LINES: list = []  # regexes (book_meta.json "drop_lines"): a line matching one is left out wherever it sits — running heads a typed-up book carries in the middle of its text
 PAGE_SCALE: dict[int, float] = {}  # per page (0-based): factor for every font size — a book that sets each chapter's body text at its own size (17 pt, then 14 pt) reads as one size
@@ -282,7 +285,12 @@ def heal_hyphens(paras: list[dict]) -> None:
                 continue
             left = re.search(r"(\w+)-$", before["text"])
             right = re.match(r"(\w+)", after["text"])
-            if left and right and vocabulary[(left.group(1) + right.group(1)).lower()] > 0:
+            joined_known = left and right and vocabulary[(left.group(1) + right.group(1)).lower()] > 0
+            # (book_meta.json "heal_hyphens") an English word broken at a line end whose whole form never appears: a short left fragment that occurs nowhere else
+            # ("con-" + "siderations") or a suffix piece ("respectful-" + "ly") is joined; both parts plain letters, so Sanskrit compounds keep their hyphen
+            fragment = HEAL_ENGLISH and left and right and left.group(1).isascii() and right.group(1).isascii() and (right.group(1).lower() in SUFFIXES
+                                                                                                              or (len(left.group(1)) <= 5 and vocabulary[left.group(1).lower()] <= 1 and left.group(1).lower() not in SHORT_WORDS))
+            if joined_known or fragment:
                 before["text"] = before["text"][:-1]
     for p in paras:
         p["runs"] = [r for r in p["runs"] if not r.get("joined")]
