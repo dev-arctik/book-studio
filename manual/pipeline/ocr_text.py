@@ -27,6 +27,7 @@ INLINE_TAGS = r"(?:i|b|sup)"  # emphasis and footnote markers survive; every oth
 def clean_inline(html: str) -> str:
     """Keep only <i>/<b>/<sup> and line breaks; list items and table rows end their line; everything else becomes plain text."""
     html = html.translate(NON_IAST_FIXES).translate(BULLET_FIXES)
+    html = re.sub(r"(?<=[^\s>])\s*<(?:ol|ul)\b[^>]*>", "\n", html, flags=re.I)  # a list nested inside an item's text: its items are lines too
     html = re.sub(r"<br\s*/?>\s*|</li>|</tr>|</p>\s*(?=<p)", "\n", html, flags=re.I)  # several <p> in one block = separate lines
     html = re.sub(rf"</?(?!{INLINE_TAGS}>)[a-z0-9]+[^>]*>", "", html, flags=re.I)
     html = re.sub(rf"<(/?)({INLINE_TAGS})\s[^>]*>", r"<\1\2>", html)

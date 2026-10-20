@@ -9,8 +9,7 @@ import sys
 import time
 from contextlib import contextmanager
 
-LOW_BATTERY = 15  # % on battery: below this, reading pauses between page batches
-RESUME_BATTERY = 20  # % on battery at which it goes on by itself (or as soon as the charger is plugged in)
+LOW_BATTERY = 50  # % on battery: below this, reading pauses between page batches (raised from 15 on 2026-10-20: leaves room to plug in)
 
 
 def battery() -> tuple[int, bool] | None:
@@ -31,11 +30,11 @@ def battery_low() -> bool:
 
 def power_back() -> bool:
     b = battery()
-    return b is None or b[1] or b[0] >= RESUME_BATTERY
+    return b is None or b[1]  # only the charger resumes reading: a battery can't charge itself back above the limit
 
 
 def wait_for_power(on_pause=lambda percent: None, on_resume=lambda: None, stop=lambda: False, poll: float = 5) -> bool:
-    """Waits while a laptop is on battery below LOW_BATTERY, until it is plugged in or back at RESUME_BATTERY.
+    """Waits while a laptop is on battery below LOW_BATTERY, until the charger is plugged in.
     Returns False if stop() asked to end the wait instead."""
     if not battery_low():
         return True

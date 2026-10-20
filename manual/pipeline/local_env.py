@@ -26,7 +26,8 @@ def _take_option(flag: str) -> str | None:
 
 # Code and books live apart: this file sits in <repo>/manual/pipeline/; books, OCR work, tools and the model live in a library
 # folder outside the public repo, given explicitly. Book Studio uses its own per-computer data folder (BOOK_STUDIO_DATA).
-# Inside: book_meta.json, books/ (originals, final) and output/<book>/ — the working files of a book being made.
+# Inside: book_meta.json, workspace/ (the working area: <book>/ stages, logs.md, STATUS.md) and the finished books in pdf/ and epub/.
+# The scans stay wherever the user keeps them — every run is given the path of the book's file.
 PIPELINE_DIR = Path(__file__).resolve().parent
 _library = os.environ.get("BOOK_STUDIO_DATA") or _take_option("--library") or os.environ.get("BOOK_LIBRARY")
 if not _library:
@@ -34,8 +35,10 @@ if not _library:
 PROJECT_ROOT = Path(_library).expanduser().resolve()
 if not PROJECT_ROOT.is_dir():
     sys.exit(f"The library folder doesn't exist: {PROJECT_ROOT}")
-BOOKS_DIR = PROJECT_ROOT / "books"
-OUTPUT_DIR = PROJECT_ROOT / "output"
+BOOKS_DIR = PROJECT_ROOT / "books"  # only Book Studio's data folder has one; run by hand the books are given by path
+# The working area: each book's stage folders, logs.md (what had to be fixed by hand, for improving the pipeline) and STATUS.md.
+# Book Studio's data folder keeps its own name for it.
+WORKSPACE_DIR = PROJECT_ROOT / ("output" if os.environ.get("BOOK_STUDIO_DATA") else "workspace")
 # Software (llama-server, fonts, the OCR model) is not a book: run by hand it lives with the code in the repo (git-ignored);
 # Book Studio keeps its own copy in its data folder
 SOFTWARE_ROOT = Path(os.environ["BOOK_STUDIO_DATA"]) if os.environ.get("BOOK_STUDIO_DATA") else PIPELINE_DIR.parent.parent
@@ -44,7 +47,7 @@ FONTS_DIR = Path(os.environ.get("BOOK_STUDIO_FONTS") or TOOLS_DIR / "fonts")
 CACHE_DIR = SOFTWARE_ROOT / ".cache"
 # Per-book settings; Book Studio writes its own merged copy (built-in settings + what the user edited in the app)
 META_FILE = Path(os.environ.get("BOOK_META_FILE") or PROJECT_ROOT / "book_meta.json")
-FINAL_DIR = Path(os.environ.get("BOOK_STUDIO_FINAL") or BOOKS_DIR / "final")
+FINAL_DIR = Path(os.environ.get("BOOK_STUDIO_FINAL") or PROJECT_ROOT)
 # Each format in its own folder, so PDFs, e-books and Word files are easy to find and hand out separately
 FINAL_KINDS = {".pdf": "pdf", ".epub": "epub", ".docx": "word"}
 
@@ -53,19 +56,20 @@ STAGES = {
     "ocr": "1-ocr",
     "assembled": "2-assembled",
     "clean-pdf": "3-clean-pdf",
+    "epub": "4-epub",
     "logs": "logs",
 }
 
 
 def stage_dir(book: str, stage: str) -> Path:
-    """output/<book>/<numbered stage folder>, created on first use."""
-    path = OUTPUT_DIR / book / STAGES[stage]
+    """workspace/<book>/<numbered stage folder>, created on first use."""
+    path = WORKSPACE_DIR / book / STAGES[stage]
     path.mkdir(parents=True, exist_ok=True)
     return path
 
 
 def final_path(filename: str) -> Path:
-    """books/final/<pdf|epub|word>/<filename> — where a finished file goes, by its format."""
+    """<library>/<pdf|epub|word>/<filename> — where a finished, checked file goes, by its format."""
     folder = FINAL_DIR / FINAL_KINDS[Path(filename).suffix.lower()]
     folder.mkdir(parents=True, exist_ok=True)
     return folder / filename
@@ -119,3 +123,9 @@ os.environ.setdefault("SURYA_INFERENCE_PARALLEL", "4")
 os.environ.setdefault("LLAMA_CPP_EXTRA_ARGS", "--cache-ram 0")
 if LLAMA_SERVER:
     os.environ.setdefault("LLAMA_CPP_BINARY", str(LLAMA_SERVER))
+# The OCR model as two plain files in .cache/models-gguf (the pinned download, as Book Studio fetched it): used instead of the
+# Hugging Face cache when present, so the laptop needs no Hugging Face login or cache layout
+_GGUF_DIR = CACHE_DIR / "models-gguf"
+if (_GGUF_DIR / "surya-2.gguf").exists() and (_GGUF_DIR / "surya-2-mmproj.gguf").exists():
+    os.environ.setdefault("SURYA_GGUF_LOCAL_MODEL_PATH", str(_GGUF_DIR / "surya-2.gguf"))
+    os.environ.setdefault("SURYA_GGUF_LOCAL_MMPROJ_PATH", str(_GGUF_DIR / "surya-2-mmproj.gguf"))

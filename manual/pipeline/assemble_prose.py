@@ -30,6 +30,7 @@ TOC_BOOK_RE = re.compile(r"^((?:BOOK|PART)\s+[A-Z]+)\s*:\s*(.+)$", re.I)  # "BOO
 TOC_NUMBERED_RE = re.compile(r"^(\d{1,2})\s+([A-Za-z].+)$")  # "1 Children of the Fifties"
 TOC_CHAPTER_RE = re.compile(r"^Chapter\s+(\d+)\s*:\s*(.+)$", re.I)
 SCENE_BREAK_RE = re.compile(r"^\*(\s*\*)+$")
+ORNAMENT_RE = re.compile(r"^[_\-–—]+\*{3,}[_\-–—]+$")  # "__*****__": a printed divider line, left out
 PART_LABEL_RE = re.compile(r"^PART\s+[A-Z]+$", re.I)  # "PART ONE" under a part title
 NOTE_START_RE = re.compile(r"^\d{1,3}\.\s")
 # Roman-numbered chapters ("IV. Vivāha-saṁskāra: Marriage", "XVII Vidyārambha…") and their numbered sub-sections ("IV.2.", "1.2.4.")
@@ -38,6 +39,7 @@ TOC_SUBSECTION_RE = re.compile(r"^[IVXL1]+\.\d")
 # A contents row holding only a label ("Chapter One", "Appendix 1 B"); the title follows on its own row
 TOC_LABEL_RE = re.compile(r"^(Chapter|Appendix)\s+[\w-]+(\s+[A-Z])?$", re.I)  # "Chapter Twenty-Seven" too
 # The matching label printed above a chapter's title ("CHAPTER 1", "CHAPTER TWO") — the typesetter prints its own
+LABEL_ONLY_RE = re.compile(r"^(CHAPTER|PART|SECTION)\s+[A-Z-]+$", re.I)  # "CHAPTER SEVENTEEN" with no title after it
 HEADING_LABEL_RE = re.compile(r"^((CHAPTER|APPENDIX)\s+[A-Z0-9]+(\s+[A-Z])?|\d{1,2})$", re.I)  # also a bare "1" above the title
 _NUMBER_WORDS = sorted("one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen "
                        "eighteen nineteen twenty thirty forty fifty".split(), key=len, reverse=True)
@@ -67,10 +69,12 @@ class Section:
     blocks: list = field(default_factory=list)  # {"type": "p"|"epigraph"|"quote"|"cite"|"sign"|"sign-detail"|"h"|"figure"|"break"|"notes-h"|"note"|"entry", ...}
 
 
-def text_shapes(page_blocks) -> dict:
+def text_shapes(page_blocks, shaped: bool = False) -> dict:
     """Indentation of each body-text block against the page's own text margins (block reading_order → shape).
     'inset': indented on both sides — a quoted passage. 'hanging': indented on the left only but running to the right
-    margin — the rest of a footnote carried over from the previous page (its lines hang under the note number)."""
+    margin — the rest of a footnote carried over from the previous page (its lines hang under the note number).
+    With `shaped` (opt-in per book): 'right' — a short block of 2–6 lines on the right (a signature with its place and date);
+    'centred' — a short block of 3+ lines centred on the text (a quoted poem)."""
     text = [b for b in page_blocks if b["label"] in ("Text", "Footnote") and (b["html"] or "").strip()]
     if len(text) < 2:
         return {}
@@ -81,6 +85,12 @@ def text_shapes(page_blocks) -> dict:
         x0, x1 = b["bbox"][0], b["bbox"][2]
         if x0 - left >= 0.03 * width and x1 - x0 >= 0.6 * width:  # wide enough to be several lines, not a short indented line
             shapes[b["reading_order"]] = "inset" if right - x1 >= 0.025 * width else "hanging" if right - x1 < 0.012 * width else ""
+        elif shaped and b["label"] == "Text":
+            lines = (b["html"] or "").count("<br") + 1
+            if 2 <= lines <= 6 and x0 - left >= 0.30 * width and right - x1 <= 0.12 * width:
+                shapes[b["reading_order"]] = "right"
+            elif lines >= 3 and x1 - x0 <= 0.6 * width and x0 - left >= 0.08 * width and abs((x0 + x1) / 2 - (left + right) / 2) <= 0.03 * width:
+                shapes[b["reading_order"]] = "centred"
     return shapes
 
 
@@ -98,12 +108,12 @@ def facsimile(page_no: int, page_blocks) -> list[dict]:
     return out
 
 
-def load_blocks(book: str, academic: bool = False, facsimiles: set = frozenset(), inset_quotes: bool = False, running_heads: list = ()):
+def load_blocks(book: str, academic: bool = False, facsimiles: set = frozenset(), inset_quotes: bool = False, running_heads: list = (), shaped: bool = False):
     """Text and picture blocks in reading order, plus the set of pages carrying a printed page number (i.e. real book pages, not covers).
     Academic books (page footnotes, indented quotations) also get each block's indentation shape and their footnotes marked."""
     blocks, numbered_pages = [], set()
     for page_no, page_blocks in ocr_pages(book):
-        shapes = text_shapes(page_blocks) if academic or inset_quotes else {}
+        shapes = text_shapes(page_blocks, shaped) if academic or inset_quotes or shaped else {}
         if page_no in facsimiles:
             numbered_pages.add(page_no)
             blocks += facsimile(page_no, page_blocks)
@@ -417,6 +427,8 @@ def classify(text: str, label: str, prev: dict | None) -> list[dict]:
     lines = [ln for ln in text.split("\n") if plain(ln)]
     if SCENE_BREAK_RE.match(p):
         return [{"type": "break"}]
+    if ORNAMENT_RE.match(p):
+        return []
     # Source on its own last line, in square brackets
     if len(lines) > 1 and re.fullmatch(r"\[.*\]", plain(lines[-1])):
         return classify("\n".join(lines[:-1]), label, prev) + [{"type": "cite", "text": plain(lines[-1])}]
@@ -484,7 +496,7 @@ def add_block(section: Section, new: dict) -> None:
 
 def section_kind(entry: dict, unnumbered: set, dropped: set, front_prefixes: tuple = ()) -> str:
     title = entry["match"]
-    if entry["hint"] in ("part", "back"):
+    if entry["hint"] in ("part", "back", "front"):
         return entry["hint"]
     if re.match(r"appendi(x|ces)\b", title, re.I):  # "Appendix 1: Use of the Word Adhikārī"
         return "back"
@@ -686,6 +698,13 @@ def assemble(blocks, contents, unnumbered: set, dropped: set, front_prefixes: tu
         if blk["label"] == "Text" and blk["shape"] == "inset" and not is_all_italic(blk["text"]):
             add_block(current, {"type": "blockquote", "text": join_lines(blk["text"]), "page": blk["page"]})
             continue
+        if blk["label"] == "Text" and blk["shape"] == "right":  # a signature block: the name, then its place and date lines
+            for n, line in enumerate(ln for ln in blk["text"].split("\n") if plain(ln)):
+                add_block(current, {"type": "sign" if n == 0 else "sign-detail", "text": plain(line)})
+            continue
+        if blk["label"] == "Text" and blk["shape"] == "centred":  # a quoted poem, line by line
+            add_block(current, {"type": "quote", "lines": [plain(ln) for ln in blk["text"].split("\n") if plain(ln)]})
+            continue
         prev = current.blocks[-1] if current.blocks else None
         for new in classify(blk["text"], blk["label"], prev and {**prev, "first": len(current.blocks) == 1}):
             if new["type"] == "h" and current.numeral == "I":
@@ -724,6 +743,27 @@ def headings_contents(blocks, skip_pages: set) -> list[dict]:
             continue
         seen.add(key)
         out.append({"match": text, "title": smart_title(text) if text.isupper() else text, "page": "", "hint": "chapter"})
+    # Chapters printed as a bare "CHAPTER ONE" … with no title after them (Canakya Niti-Sastra): the labels are the chapters, and
+    # the headings before the first one are front sections (title page, foreword). Only when labels clearly outnumber real titles.
+    texts = [re.sub(r"\s+", " ", plain(b["text"])).strip() for b in heads]
+    if sum(bool(LABEL_ONLY_RE.match(t)) for t in texts) >= 3 and sum(bool(LABEL_ONLY_RE.match(t)) for t in texts) > len(out):
+        entries, seen, started = [], set(), False
+        for b, text in zip(heads, texts):
+            key = ascii_key(text)
+            title = smart_title(text) if text.isupper() else text
+            if LABEL_ONLY_RE.match(text):
+                started = True
+                entries.append({"match": text, "title": title, "page": "", "hint": "back"})  # "back": unnumbered, titled as printed
+            elif not started and len(key) >= 3 and key not in seen and count[key] <= 2 and not PAGE_NUMBER_RE.match(text):
+                seen.add(key)
+                # Headings stacked on one page are a title page's lines ("Canakya Panidta" / "NITI-SASTRA" / the foreword's
+                # title): only the last one opens a section, the others would be empty pages
+                if entries and entries[-1]["hint"] == "front" and entries[-1]["_page"] == b["page"]:
+                    entries.pop()
+                entries.append({"match": text, "title": title, "page": "", "hint": "front", "_page": b["page"]})
+        for e in entries:
+            e.pop("_page", None)
+        return entries
     return out
 
 
@@ -833,7 +873,7 @@ def main():
     book = (local_env.book_path(sys.argv[1]) if len(sys.argv) > 1 else sys.exit(local_env.USAGE)).stem
     meta = json.loads(META_FILE.read_text(encoding="utf-8"))[book]
     blocks, numbered_pages = load_blocks(book, meta.get("academic", False), set(meta.get("facsimile_pages", [])), meta.get("inset_quotes", False),
-                                         meta.get("running_heads", []))  # academic flag also goes to assemble()
+                                         meta.get("running_heads", []), meta.get("shaped_blocks", False))  # academic flag also goes to assemble()
     # Everything after the book's last content page is left out: an index not in the contents (its page numbers would be
     # wrong in our layout), endpapers and the back cover (Dāmodara-jananī: General Index from scan page 462)
     if last := meta.get("last_page"):

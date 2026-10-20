@@ -1,6 +1,6 @@
 # manual/pipeline/book_to_epub.py
-# Turns one of our processed books (output/<book>/2-assembled/book.json) into an EPUB for Kindle and other e-readers:
-# books/final/<book>_en.epub, with the same chapters, quotations, notes and photos (with captions) as its PDF.
+# Turns one of our processed books (workspace/<book>/2-assembled/book.json) into an EPUB for Kindle and other e-readers:
+# workspace/<book>/4-epub/<book>.epub, with the same chapters, quotations, notes and photos (with captions) as its PDF.
 # Reuses typeset_book.py's conversion and picture cropping, so the e-book and the PDF can't drift apart; packaging is epub_pack.py.
 # Usage: poetry run python manual/pipeline/book_to_epub.py <path/to/book.pdf> --library <path/to/book-library>
 
@@ -135,7 +135,7 @@ def convert(book: str) -> None:
             body = f"{label}<h1>{html.escape(ch['title'])}</h1>{sub}\n{cover}{blocks_html(ch['blocks'], pictures)}\n{verses_html(ch['verses'])}"
             name = f"{ch['number']}. {ch['title']}" if ch["number"] else ch["title"]
             docs.append((f"chapter-{i:02d}", name, xhtml(ch["title"], body)))
-        out = local_env.final_path(f"{book}_en.epub")
+        out = local_env.stage_dir(book, "epub") / f"{book}.epub"  # a draft in the workspace; publish_book.py moves a checked one out
         write_epub(out, book, meta["title"], meta["author"], docs, cover_jpeg(local_env.find_book(book), meta),
                    {name: data for name, data in pictures.files.items()}, start="chapter-01")
     finally:
