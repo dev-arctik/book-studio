@@ -144,7 +144,7 @@
   align(center)[
     #text(size: 10pt, fill: soft, tracking: 0.25em, upper(ch.subtitle))
     #v(0.8em)
-    #heading(level: 1, outlined: true, text(size: 24pt, style: "italic", fill: accent, weight: "regular", ch.title)) #label("ch-" + str(i))
+    #heading(level: 1, outlined: true, text(size: 24pt, style: "italic", fill: accent, weight: "regular", hyphenate: false, ch.title)) #label("ch-" + str(i))
     #v(1em)
     #ornament
   ]
@@ -164,7 +164,7 @@
   align(center)[
     // Closing sections like "A Few Words…" carry no chapter number
     #if ch.number != none [#text(size: 9pt, fill: soft, tracking: 0.15em)[CHAPTER #ch.number] \ #v(0.6em)]
-    #heading(level: 1, outlined: true, text(size: 19pt, style: "italic", fill: accent, weight: "regular", ch.title)) #label("ch-" + str(i))
+    #heading(level: 1, outlined: true, text(size: 19pt, style: "italic", fill: accent, weight: "regular", hyphenate: false, ch.title)) #label("ch-" + str(i))
     #v(0.2em)
     #text(size: 12pt, fill: soft, ch.subtitle)
   ]

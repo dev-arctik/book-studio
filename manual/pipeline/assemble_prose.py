@@ -43,7 +43,7 @@ LABEL_ONLY_RE = re.compile(r"^(CHAPTER|PART|SECTION)\s+[A-Z-]+$", re.I)  # "CHAP
 HEADING_LABEL_RE = re.compile(r"^((CHAPTER|APPENDIX)\s+[A-Z0-9]+(\s+[A-Z])?|\d{1,2})$", re.I)  # also a bare "1" above the title
 _NUMBER_WORDS = sorted("one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen "
                        "eighteen nineteen twenty thirty forty fifty".split(), key=len, reverse=True)
-NUMBERED_LABEL_RE = re.compile(rf"^(chapter|part|book)\s*({'|'.join(_NUMBER_WORDS)})(-({'|'.join(_NUMBER_WORDS)}))?\s*", re.I)
+NUMBERED_LABEL_RE = re.compile(rf"^(chapter|part|book|appendix)\s*({'|'.join(_NUMBER_WORDS)})(-({'|'.join(_NUMBER_WORDS)}))?\s*", re.I)
 HEADING_PREFIX_RE = re.compile(r"^(chapter|appendix)\s+\w+(\s+[a-z])?\s*:\s*", re.I)  # "APPENDIX 2: " in front of a title
 # Footnote text opening with its number ("15 It is beyond…", "<sup>3</sup> From…")
 NOTE_NUMBER_RE = re.compile(r"^\s*(?:<sup>(\d{1,3})</sup>\s*|(\d{1,3})\.?\s+)(?=\S)")
@@ -586,6 +586,8 @@ def assemble(blocks, contents, unnumbered: set, dropped: set, front_prefixes: tu
     lookahead = opts.get("lookahead", LOOKAHEAD)
     extra = sorted(inserted or [], key=lambda x: x["page"])
     for i, blk in enumerate(blocks):
+        if blk["label"] == "Footnote" and blk["page"] in opts.get("text_pages", ()):  # a dialogue the reader tagged as footnotes
+            blk = {**blk, "label": "Text"}
         if extra and blk["page"] >= extra[0]["page"]:
             sections.append(Section(kind=extra[0].get("kind", "back"), title=extra[0]["title"], subtitle=extra[0].get("subtitle", ""), start_page=blk["page"]))
             extra = extra[1:]
@@ -942,7 +944,8 @@ def main():
     italic_prose = meta.get("italic_prose", False)
     inserted = meta.get("insert_sections", [])
     opts = {"ocr_tables": meta.get("ocr_tables", False), "gallery": {x["title"] for x in inserted if x.get("gallery")},
-            "list_pages": set(meta.get("list_pages", []))}  # pages whose short lines are list items (a list of titles)
+            "list_pages": set(meta.get("list_pages", [])),  # pages whose short lines are list items (a list of titles)
+            "text_pages": set(meta.get("text_pages", []))}  # pages whose footnote-tagged blocks are really body text (a dialogue)
 
     def attempt(cont, op, ins, bl=None):
         return assemble(blocks if bl is None else bl, cont, unnumbered, dropped, front_prefixes, academic, italic_prose, ins, op)
@@ -974,6 +977,16 @@ def main():
         # "Bombay(March 22 – May 4, 1977)": a title with its dates in brackets shows the dates as its subtitle
         if s.kind == "chapter" and not s.subtitle and (m := re.match(r"^(.*?\S)\s*\(([^()]*\d{3,4}[^()]*)\)$", s.title)):
             s.title, s.subtitle = m.group(1), m.group(2).strip()
+        # a subtitle that only repeats the title ("The Compendium and This Volume" under the same title) is dropped, and a title
+        # repeated at its start is cut off ("General Conduct (Ācāra)" → "(Ācāra)")
+        if s.subtitle:
+            title_key, sub = re.sub(r"\W", "", s.title.lower()), re.sub(r"\s+", " ", s.subtitle).strip()
+            if re.sub(r"\W", "", sub.lower()) == title_key:
+                s.subtitle = ""
+            elif title_key and re.sub(r"\W", "", sub.lower()).startswith(title_key):
+                s.subtitle = re.sub(r"^" + r"\W*".join(re.escape(c) for c in re.sub(r"\W", "", s.title)) + r"[\s:–—-]*", "", sub, flags=re.I).strip()
+        if s.title in meta.get("subtitle_fixes", {}):  # a subtitle the contents page gave by mistake, set or cleared by hand
+            s.subtitle = meta["subtitle_fixes"][s.title]
 
     # Captions the OCR swallowed into the picture box (checked against the scan) come from book_meta.json
     for s in sections:
