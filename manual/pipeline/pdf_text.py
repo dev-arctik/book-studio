@@ -5,6 +5,7 @@
 
 import re
 import statistics
+import unicodedata
 from collections import Counter
 
 TERMINAL = tuple('.!?।॥:"”’\')')  # a paragraph ending in one of these doesn't continue on the next page
@@ -44,6 +45,8 @@ def span_text(span: dict) -> str:
     if "\x03" in raw:  # a font without a text map: codes are 29 below the real letters, and "space" is code 3 ("WR\x03" = "to ")
         raw = "".join(chr(ord(c) + 29) if 3 <= ord(c) <= 100 else "é" if c == "Þ" else c for c in raw)
     text = re.sub(r"[\x00-\x08\x0b-\x1f]", "", raw)  # control characters some PDFs hide in the text (a stray \x08)
+    if "̅" in text:  # a letter + combining overline ("a̅") is a macron letter: written as one character ("ā")
+        text = unicodedata.normalize("NFC", text.replace("̅", "̄"))
     # "Gaudiya" (Gaudiya Press / Tattva Vicara books) uses the very same stand-in letters as "Balaram"; so does any font found by
     # balaram_fonts() (ScaGoudy, TimesLTMM…), which pdf_to_book sets per book
     return text.translate(BALARAM) if span["font"].startswith(("Balaram", "Gaudiya")) or span["font"] in BALARAM_FONTS else text
@@ -65,6 +68,7 @@ BOLD_PARA_PAGES: set[int] = set()  # pages (0-based) where a line opening with a
 FIRST_INDENT_MAX = 25  # pt — a line this far right of the margin or less is a paragraph's first-line indent; book_meta.json "first_indent_max" sets it per book (a Word book indents 35 pt)
 BULLET_FONTS: tuple = ()  # font-name prefixes of a dingbat font whose letters are bullet marks ("O" = a round bullet): book_meta.json "bullet_fonts"
 PAGE_NUMBER_BAND = 0.9  # a bare number below this share of the page height is a page number; "page_number_band" in book_meta.json (a number in a box a little higher)
+HEADING_EXTRA = 2.5  # pt above the body size from which a line is a heading; book_meta.json "heading_extra" (a book whose subheadings are only 2 pt bigger, in bold)
 NUMBERED_ITEMS = False  # book_meta.json "numbered_items": every line opening with "N. " starts a paragraph
 DROP_LINES: list = []  # regexes (book_meta.json "drop_lines"): a line matching one is left out wherever it sits — running heads a typed-up book carries in the middle of its text
 PAGE_SCALE: dict[int, float] = {}  # per page (0-based): factor for every font size — a book that sets each chapter's body text at its own size (17 pt, then 14 pt) reads as one size
@@ -178,7 +182,7 @@ def kind_of(size: float, body: float) -> str:
         return "Title"
     if size >= 1.4 * body:
         return "Heading 1"
-    if size >= body + 2.5:
+    if size >= body + HEADING_EXTRA:
         return "Heading 2"
     return "p"
 

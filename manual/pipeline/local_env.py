@@ -68,6 +68,15 @@ def stage_dir(book: str, stage: str) -> Path:
     return path
 
 
+def win_long(path) -> Path:
+    """A path over about 250 characters (a long book name appears in the folder and again in the file name) needs Windows' long-path prefix for Python to open it."""
+    path = Path(path)
+    full = str(path.resolve())
+    prefix = chr(92) * 2 + "?" + chr(92)  # two backslashes, a question mark, one backslash
+    _unused ="\\?\\"
+    return Path(prefix + full) if os.name == "nt" and len(full) > 250 and not full.startswith(prefix) else path
+
+
 def final_path(filename: str, batch: Path | None = None) -> Path:
     """<pdf|epub|word>/<filename> — where a finished, checked file goes, by its format. In the batch folder the book came from
     (group1/pdf, group1/epub — Devansh's layout, 2026-10-20) when 'batch' is given and Book Studio's own folder is not set; else in the library."""

@@ -8,6 +8,7 @@
 import sys; sys.dont_write_bytecode = True  # keep pipeline/ free of __pycache__ clutter
 import local_env
 
+import difflib
 import json
 import re
 from collections import Counter
@@ -251,6 +252,7 @@ def convert(book: str) -> None:
     global BULLET_MIN_SIZE
     BULLET_MIN_SIZE = meta.get("bullet_min_size", 0)
     pdf_text.BALARAM_FONTS = balaram_fonts(pdf)  # fonts holding Balaram-style stand-in letters are decoded, whatever their name
+    pdf_text.BALARAM_FONTS |= set(meta.get("balaram_fonts", []))  # a heading font with too few stand-in letters to be found by itself
     if meta.get("bold_paragraph_pages"):  # [first, last] scan pages of a glossary: each bold term opens an entry
         first_pg, last_pg = meta["bold_paragraph_pages"]
         pdf_text.BOLD_PARA_PAGES = set(range(first_pg - 1, last_pg))
@@ -259,12 +261,13 @@ def convert(book: str) -> None:
     pdf_text.BULLET_FONTS = tuple(meta.get("bullet_fonts", []))
     pdf_text.PAGE_NUMBER_BAND = meta.get("page_number_band", pdf_text.PAGE_NUMBER_BAND)
     pdf_text.NUMBERED_ITEMS = bool(meta.get("numbered_items"))
+    pdf_text.HEADING_EXTRA = meta.get("heading_extra", pdf_text.HEADING_EXTRA)
     if meta.get("mirrored_pages"):  # facing pages with mirrored margins: align each page's margin before measuring indents
         pdf_text.PAGE_SHIFT = pdf_text.page_shifts(pdf)
     outline = clean_outline([(t.strip(), p) for level, t, p in pdf.get_toc() if level == 1])
-    if not outline and meta.get("sections"):  # "sections": [["1: Title", first PDF page], …] — for a digital PDF without an outline (the chapters are found on its pages)
+    if meta.get("sections") and (not outline or meta.get("sections_replace")):  # "sections_replace": use the list even though the PDF has an outline (numbered chapters, other titles). "sections": [["1: Title", first PDF page], …] — for a digital PDF without an outline (the chapters are found on its pages)
         outline = [(e[0], e[1], "", "") for e in meta["sections"]]  # an entry may add a third item: the text its section begins with (several sections share a page)
-    markers = [e[2] if len(e) > 2 else "" for e in meta["sections"]] if outline and meta.get("sections") and not pdf.get_toc() else []
+    markers = [e[2] if len(e) > 2 else "" for e in meta["sections"]] if outline and meta.get("sections") and (not pdf.get_toc() or meta.get("sections_replace")) else []
     pdf_text.RUNNING_HEADS = running_heads(pdf)  # the book's own running heads are dropped from its text
     body, pitch, right = body_metrics([page_lines(p) for p in pdf])
     if meta.get("normalise_sizes"):  # chapters with their own body size (17 pt, 14 pt…): every page is scaled to the book's most common size
@@ -368,6 +371,15 @@ def convert(book: str) -> None:
                 sec["blocks"].append({"type": "blockquote", "text": flat})
             else:
                 sec["blocks"].append({"type": "p", "text": flat})
+        if meta.get("no_title_block") and sec["blocks"][:1] and sec["blocks"][0]["type"] == "h":
+            first = re.sub(r"\W", "", re.sub(r"<[^>]+>", "", sec["blocks"][0]["text"]).lower())
+            if difflib.SequenceMatcher(None, first, re.sub(r"\W", "", sec["title"].lower())).ratio() >= 0.8:
+                sec["blocks"].pop(0)  # the printed title, set a little differently from ours
+        if meta.get("chapter_subtitles") and sec["kind"] == "chapter" and not sec["subtitle"] and sec["blocks"][:1] and sec["blocks"][0]["type"] == "h":
+            first = re.sub(r"</?b>", "", sec["blocks"][0]["text"]).strip()
+            if first.isupper():  # "SACRED MARRIAGE" under the chapter's name: its subtitle
+                sec["subtitle"] = first.title()
+                sec["blocks"].pop(0)
         # A paragraph cut by a picture or a page break ("There was this" / picture / "burden of karma…") is one paragraph again:
         # a plain paragraph that opens lowercase joins the earlier plain paragraph that stopped mid-sentence
         sec["blocks"] = join_cut_paragraphs(sec["blocks"])

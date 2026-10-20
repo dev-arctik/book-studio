@@ -135,7 +135,7 @@ def convert(book: str) -> None:
             body = f"{label}<h1>{html.escape(ch['title'])}</h1>{sub}\n{cover}{blocks_html(ch['blocks'], pictures)}\n{verses_html(ch['verses'])}"
             name = f"{ch['number']}. {ch['title']}" if ch["number"] else ch["title"]
             docs.append((f"chapter-{i:02d}", name, xhtml(ch["title"], body)))
-        out = local_env.stage_dir(book, "epub") / f"{book}.epub"  # a draft in the workspace; publish_book.py moves a checked one out
+        out = local_env.win_long(local_env.stage_dir(book, "epub") / f"{book}.epub")  # a draft in the workspace; publish_book.py moves a checked one out
         write_epub(out, book, meta["title"], meta["author"], docs, cover_jpeg(local_env.find_book(book), meta),
                    {name: data for name, data in pictures.files.items()}, start="chapter-01")
     finally:

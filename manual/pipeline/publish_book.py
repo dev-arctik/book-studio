@@ -16,7 +16,7 @@ def publish(book: str, batch=None) -> None:
         sys.exit(f"Not ready: no draft for {', '.join(missing)} — run run_book.py first")
     for path in drafts.values():
         target = local_env.final_path(f"{book}_en{path.suffix}", batch)
-        shutil.copyfile(path, target)
+        shutil.copyfile(local_env.win_long(path), local_env.win_long(target))
         print(f"{target}  ({target.stat().st_size // 1024} KB)")
 
 
