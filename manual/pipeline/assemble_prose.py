@@ -1002,6 +1002,10 @@ def main():
             if b["type"] == "figure" and not b["caption"]:
                 b["caption"] = meta.get("figure_captions", {}).get(str(b["page"]), "")
 
+    # "part_sections": {"contents title": "Part One"} — contents entries that are really parts of the book (they open the chapters that follow)
+    for s in sections:
+        if s.title in meta.get("part_sections", {}):
+            s.kind, s.subtitle = "part", meta["part_sections"][s.title]
     # "drop_headings": headings left out by hand (a "Contents" title whose list was read separately and left behind as a lone heading)
     if meta.get("drop_headings"):
         for s in sections:

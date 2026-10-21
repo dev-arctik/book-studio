@@ -75,6 +75,10 @@ An EPUB for Kindle and other e-readers: a clickable contents, the cover, and the
   ```
 Kindle reads EPUB only through Amazon's *Send to Kindle* (which uploads the file to Amazon) — over USB it needs AZW3.
 
+## Settings for scans (the prose route) added with the Group 2 books
+
+`strip_text` (regexes removed from every block and from the copyright page — a scanner's watermark line), `drop_headings` (a lone heading left behind, e.g. "Contents"), `part_sections` (`{"contents title": "Part One"}` — rows of the contents that are really parts), plus the older `contents_pages`, `chapter_subentries`, `insert_sections`, `drop_sections`, `subtitle_fixes`, `frontispiece_skip`. A book name ending in a dot or space is stored in the workspace without it (Windows drops it).
+
 ## Fixing what the report flags
 
 `report.txt` lists chapters it could not match to the book's contents page, missing verse numbers, verses missing a part, pages with no text, and the first words of every chapter (to spot a damaged drop cap). Check each against the scan, then:
