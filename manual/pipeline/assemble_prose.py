@@ -923,6 +923,14 @@ def main():
     if last := meta.get("last_page"):
         blocks = [b for b in blocks if b["page"] <= last]
     blocks = reorder_pages(blocks, set(meta.get("skip_pages", [])), meta.get("page_moves", []))
+    # "strip_text": regexes removed from every block (a scanner's watermark line printed on each page); a block left empty goes
+    for rx in meta.get("strip_text", []):
+        for b in blocks:
+            if b.get("text"):
+                b["text"] = re.sub(rx, "", b["text"])
+    if meta.get("strip_text"):
+        blocks = [b for b in blocks if b.get("text") or b["label"] in ("Picture", "FullPage") or not b.get("label", "").endswith("Header")]
+        blocks = [b for b in blocks if b.get("text", "x").strip() or b["label"] in ("Picture", "FullPage")]
     # ṛ first, so hand-checked fixes can be written in the book's correct spelling ("Kṛṣṇa")
     fixes = restore_r_dot(blocks) if meta.get("restore_r_dot") else []
     fixes += apply_text_fixes(blocks, meta.get("text_fixes", []))
@@ -993,6 +1001,11 @@ def main():
         for b in s.blocks:
             if b["type"] == "figure" and not b["caption"]:
                 b["caption"] = meta.get("figure_captions", {}).get(str(b["page"]), "")
+
+    # "drop_headings": headings left out by hand (a "Contents" title whose list was read separately and left behind as a lone heading)
+    if meta.get("drop_headings"):
+        for s in sections:
+            s.blocks = [b for b in s.blocks if not (b["type"] == "h" and re.sub(r"<[^>]+>", "", b.get("text", "")).strip() in meta["drop_headings"])]
 
     # Indexes are matched (so the sections before them end in the right place) but left out: their page numbers would be wrong
     report_sections = sections

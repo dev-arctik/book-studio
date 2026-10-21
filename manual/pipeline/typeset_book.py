@@ -180,7 +180,7 @@ def first_text_page(book: str, assembled: dict) -> int:
 COPYRIGHT_RE = re.compile(r"©|copyright|all rights reserved|\bisbn\b|printed in|published by", re.I)
 
 
-def copyright_page(book: str, first_page: int) -> list[list[list[dict]]] | None:
+def copyright_page(book: str, first_page: int, strip: list = ()) -> list[list[list[dict]]] | None:
     """The book's own copyright page (©, ISBN, publisher) from its front pages, as blocks of lines, set faithfully as printed.
     Only used when the book's settings say "keep_copyright" — the approved design leaves it out. Scans read the OCR text;
     digital PDFs (no OCR pages) read the PDF's own text."""
@@ -199,7 +199,11 @@ def copyright_page(book: str, first_page: int) -> list[list[list[dict]]] | None:
         print("Copyright page: none found in the front pages — the PDF goes without one")
         return None
     print(f"Copyright page: page {best[0]} (check it against the scan)")
-    return [[to_segments(line) for line in text.split("\n") if line.strip()] for text in best[1]]
+    def stripped(text: str) -> str:  # the book's "strip_text" patterns (a scanner's watermark) leave the copyright page too
+        for rx in strip:
+            text = re.sub(rx, "", text)
+        return text
+    return [[to_segments(line) for line in stripped(text).split("\n") if line.strip()] for text in best[1]]
 
 
 def build_typst_data(book: str, build_dir: Path) -> dict:
@@ -213,7 +217,7 @@ def build_typst_data(book: str, build_dir: Path) -> dict:
     cover_data = {"path": typst_path(cover_path), "aspect": cover.height / cover.width}
     frontispiece = front_figures(book, first_text_page(book, assembled), figures, set(meta.get("frontispiece_skip", [])))
     front, chapters = (from_prose_book if meta["layout"] == "prose" else from_verses_book)(assembled, figures)
-    copyright_lines = copyright_page(book, first_text_page(book, assembled)) if meta.get("keep_copyright") else None
+    copyright_lines = copyright_page(book, first_text_page(book, assembled), meta.get("strip_text", [])) if meta.get("keep_copyright") else None
     return {"meta": meta, "layout": meta["layout"], "cover": cover_data, "copyright": copyright_lines, "frontispiece": frontispiece,
             "front": front, "chapters": chapters}
 

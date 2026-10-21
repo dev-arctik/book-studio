@@ -63,7 +63,7 @@ STAGES = {
 
 def stage_dir(book: str, stage: str) -> Path:
     """workspace/<book>/<numbered stage folder>, created on first use."""
-    path = WORKSPACE_DIR / book / STAGES[stage]
+    path = WORKSPACE_DIR / book.rstrip(". ") / STAGES[stage]  # (Windows drops a trailing dot from a folder name: "…Mitali C." is "…Mitali C")
     path.mkdir(parents=True, exist_ok=True)
     return path
 

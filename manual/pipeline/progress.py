@@ -146,7 +146,7 @@ def minutes(seconds: float) -> str:
 
 def book_line(key: str, total: int | None, working: bool, rest_left: float | None = None, batch: Path | None = None) -> tuple[str, int]:
     """(status text, pages read) for one book."""
-    ws = local_env.WORKSPACE_DIR / key
+    ws = local_env.WORKSPACE_DIR / key.rstrip(". ")
     ocr = ws / local_env.STAGES["ocr"]
     pages = list(ocr.glob("page-*.json")) if ocr.is_dir() else []
     done = len(pages)
