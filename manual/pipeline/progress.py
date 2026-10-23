@@ -31,6 +31,11 @@ def option(flag: str) -> str | None:
     return None
 
 
+def values(flag: str) -> list[str]:
+    """Every value given after a flag that may be repeated (--inputs a --inputs b)."""
+    return [sys.argv[i + 1] for i, a in enumerate(sys.argv[:-1]) if a == flag]
+
+
 def reader_running() -> bool:
     """True while a llama-server (the page reader) process exists."""
     try:
@@ -126,6 +131,15 @@ def pdf_pages(path: Path) -> int:
         doc.close()
 
 
+REDO: list[str] = []  # words of the books being re-read (--redo "a|b")
+
+
+def published_time(key: str, batch: Path | None) -> float:
+    """When the book's finished PDF was last written."""
+    f = (batch or local_env.FINAL_DIR) / local_env.FINAL_KINDS[".pdf"] / f"{key}_en.pdf"
+    return f.stat().st_mtime if f.is_file() else 0
+
+
 def final_exists(key: str, batch: Path | None = None) -> bool:
     return all(((batch or local_env.FINAL_DIR) / local_env.FINAL_KINDS[ext] / f"{key}_en{ext}").is_file() for ext in (".pdf", ".epub"))
 
@@ -151,8 +165,16 @@ def book_line(key: str, total: int | None, working: bool, rest_left: float | Non
     pages = list(ocr.glob("page-*.json")) if ocr.is_dir() else []
     done = len(pages)
     has = lambda stage, name: (ws / local_env.STAGES[stage] / name).is_file()  # noqa: E731
-    if final_exists(key, batch):
+    ocr_times = [p.stat().st_mtime for p in pages]
+    redo = any(w in key.lower() for w in REDO)  # --redo: a book being read again — its published files are the old version until new ones replace them
+    if final_exists(key, batch) and not (redo and (not total or done < total or max(ocr_times, default=0) > published_time(key, batch))):
         return "DONE — published in pdf/ and epub/", total or done
+    if redo and final_exists(key, batch) and (not total or done < total):
+        return (f"reading {done}/{total or '?'} — the OLD version stays published until the new one passes" if done else
+                "queued — the OLD version stays published until the new one passes"), done
+    draft = ws / local_env.STAGES["clean-pdf"] / f"{key}.pdf"
+    if redo and total and done >= total and (not draft.is_file() or draft.stat().st_mtime < max(ocr_times)):
+        return "all pages read — fixing and checking (the OLD version stays published until the new one passes)", done
     if has("clean-pdf", f"{key}.pdf") and has("epub", f"{key}.epub"):
         return "built — waiting for its check, then publish", total or done
     if has("assembled", "book.json"):
@@ -172,18 +194,25 @@ def book_line(key: str, total: int | None, working: bool, rest_left: float | Non
 
 def render() -> str:
     meta = json.loads(local_env.META_FILE.read_text(encoding="utf-8")) if local_env.META_FILE.is_file() else {}
-    inputs = Path(option("--inputs")).expanduser().resolve() if option("--inputs") else None
-    scans = {p.stem: p for p in sorted(inputs.glob("*.pdf"))} if inputs and inputs.is_dir() else {}
+    # --inputs may be given several times (one per batch folder); --only "a|b|c" keeps the books whose name holds one of the words, in that order
+    REDO.extend(w.strip().lower() for w in (option("--redo") or "").split("|") if w.strip())
+    folders = [Path(x).expanduser().resolve() for x in values("--inputs")]
+    scans = {p.stem: p for f in folders if f.is_dir() for p in sorted(f.glob("*.pdf"))}
+    inputs = {k: v.parent for k, v in scans.items()}  # each book's own batch folder: its finished files are looked for there
     totals = {key: pdf_pages(path) for key, path in scans.items()}
-    batch_keys = set(scans) if scans else set(meta)  # given a batch folder, only that batch's books (the library's settings cover every batch)
+    batch_keys = set(scans) if scans else set(meta)  # given batch folders, only their books (the library's settings cover every batch)
     keys = sorted(batch_keys, key=lambda k: (totals.get(k) is None, totals.get(k) or 0, k))  # smallest first
+    if only := option("--only"):
+        words = [w.strip().lower() for w in only.split("|") if w.strip()]
+        keys = [k for w in words for k in keys if w in k.lower()]
+        keys = list(dict.fromkeys(keys))  # the run's own order
     working = reader_running()
     mode, rest_left = cooldown_mode(working)
     battery = power.battery()
     power_text = "no battery info" if battery is None else f"{battery[0]}% {'plugged in' if battery[1] else 'ON BATTERY'}"
     rows, read, all_pages, published = [], 0, 0, 0
     for n, key in enumerate(keys, 1):
-        status, got = book_line(key, totals.get(key), working, rest_left, inputs)
+        status, got = book_line(key, totals.get(key), working, rest_left, inputs.get(key) if isinstance(inputs, dict) else inputs)
         published += status.startswith("DONE")
         read += got
         all_pages += totals.get(key) or 0
