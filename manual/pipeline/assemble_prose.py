@@ -1002,6 +1002,18 @@ def main():
             if b["type"] == "figure" and not b["caption"]:
                 b["caption"] = meta.get("figure_captions", {}).get(str(b["page"]), "")
 
+    # "bold_speakers": a dialogue's speaker names set in bold — an ALL-CAPS name before a colon ("ŚRĪLA PRABHUPĀDA:", "DR. BENFORD:"), plus any
+    # names in the list that are printed in lower case ("Teacher", "Śrīdāmā"); only at the start of a paragraph
+    if meta.get("bold_speakers"):
+        extra = [re.escape(x) for x in meta["bold_speakers"] if isinstance(x, str)]
+        rx = re.compile(r"^((?:<[^>]+>)*)((?:[A-ZĀĪŪṚṆŚṢṬḌÑṂḤ][A-ZĀĪŪṚṆŚṢṬḌÑṂḤa-zīṛ.’' -]{1,38}?|" + "|".join(extra or ["(?!)"]) + r")):(?=\s)")
+        for s in sections:
+            for b in s.blocks:
+                if b["type"] in ("p", "blockquote", "entry", "note", "sign-detail") and isinstance(b.get("text"), str):
+                    m = rx.match(b["text"])
+                    name = re.sub(r"<[^>]+>", "", m.group(2)) if m else ""
+                    if m and "<b>" not in b["text"][:m.end()] and (name.isupper() or name.strip() in meta["bold_speakers"]) and len(name.split()) <= 4:
+                        b["text"] = f"<b>{name.strip()}:</b>" + b["text"][m.end():]
     # "part_sections": {"contents title": "Part One"} — contents entries that are really parts of the book (they open the chapters that follow)
     for s in sections:
         if s.title in meta.get("part_sections", {}):
