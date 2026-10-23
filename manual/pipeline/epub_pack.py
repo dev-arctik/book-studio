@@ -25,6 +25,7 @@ CSS = """@font-face { font-family: "Gentium"; font-style: normal; font-weight: n
 body { font-family: "Gentium", serif; line-height: 1.45; }
 h1 { color: #7a4a12; font-style: italic; font-weight: normal; text-align: center; margin: 0.4em 0 1.2em; }
 h2 { color: #7a4a12; font-size: 1em; font-weight: bold; margin: 1.3em 0 0.5em; page-break-after: avoid; }
+h2.centre { text-align: center; }
 p.label { text-align: center; text-indent: 0; color: #6b6158; font-size: 0.8em; letter-spacing: 0.15em; margin-top: 2em; }
 p.sub { text-align: center; text-indent: 0; color: #6b6158; margin: -0.8em 0 1.2em; }
 p { margin: 0; text-indent: 1.3em; text-align: justify; }
@@ -53,6 +54,8 @@ table.book th { color: #7a4a12; text-align: center; }
 nav#toc ol { list-style: none; padding: 0; margin: 1em 0; }
 nav#toc li { margin: 0.7em 0; }
 nav#toc a { color: inherit; text-decoration: none; }
+nav#toc ol ol { margin: 0.2em 0 0.4em 1.2em; font-size: 0.9em; }
+nav#toc ol ol li { margin: 0.25em 0; }
 .title { text-align: center; margin-top: 30%; }
 .title .name { font-size: 2.2em; font-style: italic; color: #7a4a12; }
 .title .sub { font-size: 1.1em; color: #6b6158; margin-top: 0.5em; }
@@ -85,13 +88,14 @@ def write_epub(out: Path, book: str, title: str, author: str, docs: list[tuple[s
     """docs: (id, contents label, XHTML) in reading order — every doc except the title page is listed in the clickable contents.
     images: {"images/figure-001.jpg": bytes} referenced by the docs."""
     images = images or {}
+    docs = [d if len(d) > 3 else (*d, []) for d in docs]  # (id, label, xhtml, topics): topics = [(anchor id, text)] listed under the chapter
     book_id = f"urn:uuid:{uuid.uuid5(uuid.NAMESPACE_URL, 'iskcon-youth-forum/' + book)}"
     modified = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    manifest = "\n".join(f'<item id="{d}" href="{d}.xhtml" media-type="application/xhtml+xml"/>' for d, _, _ in docs)
+    manifest = "\n".join(f'<item id="{d}" href="{d}.xhtml" media-type="application/xhtml+xml"/>' for d, *_ in docs)
     manifest += "\n" + "\n".join(f'<item id="font-{k}" href="fonts/{f}" media-type="font/ttf"/>' for k, f in FONTS.items())
     manifest += "".join(f'\n<item id="img-{i}" href="{p}" media-type="image/jpeg"/>' for i, p in enumerate(images, 1))
     # Reading order: cover, title page, then the clickable contents page (where a reader expects it), then the book
-    spine = "\n".join(f'<itemref idref="{d}"/>' + ('\n<itemref idref="nav"/>' if d == "title" else "") for d, _, _ in docs)
+    spine = "\n".join(f'<itemref idref="{d}"/>' + ('\n<itemref idref="nav"/>' if d == "title" else "") for d, *_ in docs)
     opf = f'''<?xml version="1.0" encoding="utf-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bookid" xml:lang="en">
 <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
@@ -118,15 +122,27 @@ def write_epub(out: Path, book: str, title: str, author: str, docs: list[tuple[s
 </package>
 '''
     # The clickable contents: everything after the title page (the cover and title are reached by paging back)
-    listed = [(d, t) for d, t, _ in docs if d != "title"]
-    nav = xhtml("Contents", '<nav epub:type="toc" id="toc"><h1>Contents</h1><ol>\n' + "\n".join(
-        f'<li><a href="{d}.xhtml">{html.escape(t)}</a></li>' for d, t in listed) + "\n</ol></nav>\n"
+    listed = [(d, t, subs) for d, t, _, subs in docs if d != "title"]
+
+    def nav_item(d, t, subs):
+        inner = "".join(f'<li><a href="{d}.xhtml#{a}">{html.escape(x)}</a></li>' for a, x in subs)
+        return f'<li><a href="{d}.xhtml">{html.escape(t)}</a>' + (f"<ol>{inner}</ol>" if inner else "") + "</li>"
+
+    nav = xhtml("Contents", '<nav epub:type="toc" id="toc"><h1>Contents</h1><ol>\n' + "\n".join(nav_item(*x) for x in listed) + "\n</ol></nav>\n"
         '<nav epub:type="landmarks" hidden=""><ol><li><a epub:type="toc" href="nav.xhtml">Contents</a></li>'
         f'<li><a epub:type="bodymatter" href="{start}.xhtml">Start</a></li></ol></nav>')
+    order = iter(range(1, 100000))
+
+    def ncx_point(d, t, subs):
+        n = next(order)
+        kids = "".join(f'<navPoint id="n{n}-{k}" playOrder="{next(order)}"><navLabel><text>{html.escape(x)}</text></navLabel><content src="{d}.xhtml#{a}"/></navPoint>'
+                       for k, (a, x) in enumerate(subs, 1))
+        return f'<navPoint id="n{n}" playOrder="{n}"><navLabel><text>{html.escape(t)}</text></navLabel><content src="{d}.xhtml"/>{kids}</navPoint>'
+
+    ncx_points = [ncx_point(*x) for x in listed]
     ncx = (f'<?xml version="1.0" encoding="utf-8"?>\n<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">\n'
            f'<head><meta name="dtb:uid" content="{book_id}"/></head>\n<docTitle><text>{html.escape(title)}</text></docTitle>\n<navMap>\n'
-           + "\n".join(f'<navPoint id="n{i}" playOrder="{i}"><navLabel><text>{html.escape(t)}</text></navLabel><content src="{d}.xhtml"/></navPoint>'
-                       for i, (d, t) in enumerate(listed, 1)) + "\n</navMap>\n</ncx>\n")
+           + "\n".join(ncx_points) + "\n</navMap>\n</ncx>\n")
     cover_page = xhtml(title, '<div style="text-align:center"><img src="cover.jpg" alt="Cover" style="max-width:100%;max-height:100%"/></div>')
 
     with zipfile.ZipFile(out, "w") as z:
@@ -142,7 +158,7 @@ def write_epub(out: Path, book: str, title: str, author: str, docs: list[tuple[s
         add("OEBPS/style.css", CSS)
         add("OEBPS/cover.xhtml", cover_page)
         add("OEBPS/cover.jpg", cover)
-        for d, _, page in docs:
+        for d, _, page, _ in docs:
             add(f"OEBPS/{d}.xhtml", page)
         for path, data in images.items():
             add(f"OEBPS/{path}", data)

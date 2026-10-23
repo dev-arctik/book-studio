@@ -8,12 +8,12 @@ from pathlib import Path
 import cv2
 import numpy as np
 import pypdfium2 as pdfium
-from PIL import Image, ImageOps
+from PIL import Image, ImageFilter, ImageOps
 
 import local_env
 
 CROP_DPI = 300  # sharp in print at the size the template places figures
-MAX_EDGE = 1200  # px — over 300 dpi at the largest size the template prints a figure (10 cm); keeps the PDF small
+MAX_EDGE = 1600  # px — about 350 dpi at the largest size the template prints a figure (10 cm); keeps the PDF reasonable
 DARK = 110  # grey level below which a pixel counts as frame line / ink
 COLOUR_SHARE = 0.05  # a crop with at least this share of clearly saturated pixels is a colour picture (painting, photo plate)
 
@@ -106,5 +106,6 @@ def crop_figure(pdf: pdfium.PdfDocument, page_no: int, bbox, image_bbox) -> Imag
     _, (x0, y0, x1, y1) = detect(np.array(region.convert("L")))  # frame and margin detection work on grey tones
     figure = region.crop((x0, y0, x1, y1))
     figure = figure if is_colour(figure) else figure.convert("L")
-    figure.thumbnail((MAX_EDGE, MAX_EDGE))
-    return figure
+    figure.thumbnail((MAX_EDGE, MAX_EDGE), Image.LANCZOS)
+    # A scan's picture is soft: a mild unsharp mask brings back edges and lettering without adding noise (Devansh, 2026-10-23: picture quality)
+    return figure.filter(ImageFilter.UnsharpMask(radius=1.6, percent=70, threshold=3))

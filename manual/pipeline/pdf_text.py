@@ -122,11 +122,28 @@ def bullet_boxes(page) -> list[tuple]:
     return [tuple(ln["bbox"]) for b in page.get_text("dict")["blocks"] for ln in b.get("lines", []) if is_bullet_line(ln)]
 
 
+def merge_pieces(lines: list[dict]) -> list[dict]:
+    """A justified line some PDFs store as one piece per word (each its own "line" on the same baseline) is one line again —
+    otherwise its middle pieces read as indented lines of their own ("Sophistical," / "materially conceived strategic religio-")."""
+    out = []
+    for ln in lines:
+        if out:
+            prev = out[-1]
+            size = ln["spans"][0]["size"] if ln.get("spans") else 10
+            if (abs(ln["bbox"][1] - prev["bbox"][1]) < 1.5 and abs(ln["bbox"][3] - prev["bbox"][3]) < 1.5
+                    and -1 <= ln["bbox"][0] - prev["bbox"][2] <= 4 * size and prev.get("spans") and ln.get("spans")
+                    and abs(prev["spans"][-1]["size"] - ln["spans"][0]["size"]) < 0.5):
+                out[-1] = {**prev, "spans": prev["spans"] + ln["spans"], "bbox": (min(prev["bbox"][0], ln["bbox"][0]), prev["bbox"][1], max(prev["bbox"][2], ln["bbox"][2]), max(prev["bbox"][3], ln["bbox"][3]))}
+                continue
+        out.append(ln)
+    return out
+
+
 def page_lines(page) -> list[dict]:
     """Every text line on a page with its spans; page numbers, running heads and blank lines left out."""
     lines = []
     for block in page.get_text("dict")["blocks"]:
-        for ln in block.get("lines", []):
+        for ln in merge_pieces(block.get("lines", [])):
             if is_bullet_line(ln):
                 continue  # the mark itself: page_items turns the line beside it into a list item
             spans = [{"text": span_text(s), "size": round(s["size"], 1),

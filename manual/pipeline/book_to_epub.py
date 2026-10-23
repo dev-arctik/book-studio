@@ -67,7 +67,9 @@ def blocks_html(blocks: list[dict], pictures: Pictures) -> str:
         elif kind == "figure":
             out.append(figure_html(b, pictures))
         elif kind == "h":
-            out.append(f"<h2>{rich(b['segs'])}</h2>")
+            anchor = f' id="{b["id"]}"' if b.get("id") else ""  # topic anchors feed the nested contents
+            centre = ' class="centre"' if b.get("centre") else ""
+            out.append(f"<h2{anchor}{centre}>{rich(b['segs'])}</h2>")
         elif kind == "break":
             out.append('<p class="break">* * *</p>')
         elif kind == "centred":
@@ -134,7 +136,8 @@ def convert(book: str) -> None:
             cover = figure_html(ch["cover"], pictures) if ch.get("cover") else ""
             body = f"{label}<h1>{html.escape(ch['title'])}</h1>{sub}\n{cover}{blocks_html(ch['blocks'], pictures)}\n{verses_html(ch['verses'])}"
             name = f"{ch['number']}. {ch['title']}" if ch["number"] else ch["title"]
-            docs.append((f"chapter-{i:02d}", name, xhtml(ch["title"], body)))
+            subs = [(b["id"], re.sub(r"\s+", " ", "".join(s["t"] for s in b["segs"])).strip()) for b in ch["blocks"] if b["type"] == "h" and b.get("id")]
+            docs.append((f"chapter-{i:02d}", name, xhtml(ch["title"], body), subs))
         out = local_env.win_long(local_env.stage_dir(book, "epub") / f"{book}.epub")  # a draft in the workspace; publish_book.py moves a checked one out
         write_epub(out, book, meta["title"], meta["author"], docs, cover_jpeg(local_env.find_book(book), meta),
                    {name: data for name, data in pictures.files.items()}, start="chapter-01")

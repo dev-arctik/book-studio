@@ -120,16 +120,22 @@ def page_items(page, body: float, margin: float) -> list[dict]:
         edges = sorted({round(c[0]) for c in cells}) if cells else None
         items.append({"object": {"type": "table", "rows": table_rows(g, body, edges), "page": page.number + 1, "top": top}, "y": top})
     # Centred lines (a boxed list of the twelve principles, a verse): two or more in a row become one centred block
-    centre = w / 2
+    # The text column's own centre, from this page's full body lines (mirrored facing pages put the column off the page's centre)
+    full = [l for l in lines if "object" not in l and abs(l["size"] - body) < 0.3 and l["x1"] - l["x0"] > 0.6 * (w - 2 * margin)]
+    col_left, col_right = (min(l["x0"] for l in full), max(l["x1"] for l in full)) if len(full) >= 4 else (margin, w - margin)
+    centre = (col_left + col_right) / 2
+    col_width = col_right - col_left
     # (a full body line is symmetric too — a centred line also starts well in from the left margin)
-    is_centred = lambda l: abs((l["x0"] + l["x1"]) / 2 - centre) < 4 and l["x0"] > margin + 8 and l["size"] < 1.4 * body
+    is_centred = lambda l: abs((l["x0"] + l["x1"]) / 2 - centre) < 4 and l["x0"] > col_left + 8 and l["size"] < 1.4 * body
     run = []
     for l in items + [None]:
         if l is not None and "object" not in l and is_centred(l) and (not run or l["y"] - run[-1]["y"] < 3 * ROW_GAP):
             run.append(l)
             continue
         # An indented quotation is symmetric too, but all its lines start at the same indent; centred lines start all over
-        if len(run) >= 2 and max(x["x0"] for x in run) - min(x["x0"] for x in run) > 15:
+        # A single centred line, clearly shorter than the text column, is a centred heading or number ("(1)", "The Ten Offences"), kept centred
+        single = len(run) == 1 and abs(run[0]["size"] - body) < 0.5 and (run[0]["x1"] - run[0]["x0"]) < 0.72 * col_width and len(run[0]["text"]) < 90
+        if (len(run) >= 2 and max(x["x0"] for x in run) - min(x["x0"] for x in run) > 15) or single:
             italic = all(s["italic"] for x in run for s in x["spans"] if s["text"].strip())
             obj = ({"type": "quote", "lines": [x["text"] for x in run]} if italic
                    else {"type": "centred", "lines": [runs_text([{**s, "size": body} for s in x["spans"]], body) for x in run]})
@@ -265,6 +271,13 @@ def convert(book: str) -> None:
     pdf_text.HEADING_EXTRA = meta.get("heading_extra", pdf_text.HEADING_EXTRA)
     if meta.get("mirrored_pages"):  # facing pages with mirrored margins: align each page's margin before measuring indents
         pdf_text.PAGE_SHIFT = pdf_text.page_shifts(pdf)
+    # Topics the PDF's own outline lists below its chapters (levels 2 and 3): a line in the text with the same words is a subheading,
+    # so the contents shows them under their chapter as the original does
+    topic_pages: dict[str, set[int]] = {}
+    for level, title, page in pdf.get_toc():
+        if level >= 2:
+            topic_pages.setdefault(re.sub(r"\W+", "", title.lower()), set()).add(page)
+    is_topic = lambda text, page: any(abs(page - pg) <= 1 for pg in topic_pages.get(re.sub(r"\W+", "", text.lower()), ()))  # noqa: E731
     outline = clean_outline([(t.strip(), p) for level, t, p in pdf.get_toc() if level == 1])
     if meta.get("sections") and (not outline or meta.get("sections_replace")):  # "sections_replace": use the list even though the PDF has an outline (numbered chapters, other titles). "sections": [["1: Title", first PDF page], …] — for a digital PDF without an outline (the chapters are found on its pages)
         outline = [(e[0], e[1], "", "") for e in meta["sections"]]  # an entry may add a third item: the text its section begins with (several sections share a page)
@@ -347,7 +360,11 @@ def convert(book: str) -> None:
         drop = ""
         for p in mine:
             if p["kind"] == "object":
-                sec["blocks"].append(p["object"])
+                obj = p["object"]
+                if obj["type"] in ("centred", "quote") and is_topic(" ".join(re.sub(r"<[^>]+>", "", l) for l in obj["lines"]), p["page"] + 1):
+                    sec["blocks"].append({"type": "h", "text": " ".join(re.sub(r"<[^>]+>", "", l) for l in obj["lines"]).strip()})  # a line the PDF's own outline lists
+                    continue
+                sec["blocks"].append(obj)
                 continue
             text = runs_text(p["runs"], body)
             if p["kind"] == "Title" and len(p["text"]) == 1:
@@ -356,6 +373,9 @@ def convert(book: str) -> None:
             if drop:
                 text, drop = drop + text, ""
             flat = re.sub(r"(?<=\S) {2,}", " ", text.replace("\n", " "))  # Word text carries doubled spaces
+            if p["kind"] == "p" and is_topic(re.sub(r"<[^>]+>", "", flat), p["page"] + 1):
+                sec["blocks"].append({"type": "h", "text": re.sub(r"<[^>]+>", "", flat).strip()})  # listed in the PDF's own outline, so a topic of its chapter
+                continue
             words = [r for r in p["runs"] if not r.get("break") and r["text"].strip()]
             italic = bool(words) and all(r["italic"] for r in words)
             caps_heading = len(p["text"]) < 60 and p["text"].isupper() and len(p["text"].split()) <= 6 and sum(c.isalpha() for c in p["text"]) >= 6  # "FINANCIAL", "HEALTH": a typed-up book's subheading
@@ -376,6 +396,8 @@ def convert(book: str) -> None:
             first = re.sub(r"\W", "", re.sub(r"<[^>]+>", "", sec["blocks"][0]["text"]).lower())
             if difflib.SequenceMatcher(None, first, re.sub(r"\W", "", sec["title"].lower())).ratio() >= 0.8:
                 sec["blocks"].pop(0)  # the printed title, set a little differently from ours
+        if meta.get("chapter_subtitles") and sec["kind"] == "chapter" and not sec["subtitle"] and sec["blocks"][:1] and sec["blocks"][0]["type"] == "centred" and len(sec["blocks"][0]["lines"]) == 1:
+            sec["blocks"][0] = {"type": "h", "text": re.sub(r"<[^>]+>", "", sec["blocks"][0]["lines"][0])}  # a lone centred line under the title is its subtitle
         if meta.get("chapter_subtitles") and sec["kind"] == "chapter" and not sec["subtitle"] and sec["blocks"][:1] and sec["blocks"][0]["type"] == "h":
             first = re.sub(r"</?b>", "", sec["blocks"][0]["text"]).strip()
             if first.isupper():  # "SACRED MARRIAGE" under the chapter's name: its subtitle

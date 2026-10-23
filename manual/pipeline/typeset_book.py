@@ -23,9 +23,18 @@ TEMPLATE = local_env.PIPELINE_DIR / "book_template.typ"
 META_FILE = local_env.META_FILE
 
 
+# Characters Gentium lacks (they would print in a fallback font): the Devanagari danda that OCR returns at the end of a Sanskrit line, °F
+GENTIUM_SAFE = str.maketrans({"।": "|", "॥": "||", "℉": "°F", "℃": "°C"})
+
+
+def safe(text: str) -> str:
+    return text.translate(GENTIUM_SAFE)
+
+
 def to_segments(text: str) -> list[dict]:
     """'<i>Padyāvalī</i> was written' → [{t:'Padyāvalī', i:True, b:False}, {t:' was written', ...}] for the Typst template.
     Footnote markers and ordinals ('day.<sup>1</sup>', '10<sup>th</sup>') get sup:True."""
+    text = safe(text)
     segs, italic, bold, sup = [], False, False, False
     for part in re.split(r"(</?(?:i|b|sup)>)", text):
         if part in ("<i>", "</i>"):
@@ -51,6 +60,59 @@ def gloss_segments(text: str) -> list[dict]:
         elif item:
             segs.append({"t": item, "i": False, "b": False})
     return segs
+
+
+GLOSS_RE = re.compile(r"\s=\s")
+
+
+def is_gloss(text: str) -> bool:
+    """A word-for-word line: 'esthale = in this regard | ārao = another item | …' (three or more 'word = meaning' pairs)."""
+    return len(GLOSS_RE.findall(text)) >= 3 and text.count(" | ") >= 2
+
+
+def gloss_equals_segments(text: str) -> list[dict]:
+    """'etad-dvārā = thus | ihāi = It | …' → the Sanskrit word before each ' = ' in bold, the meaning plain (printed word-for-word
+    glosses mark the Sanskrit this way). OCR italics are dropped: bold alone marks the Sanskrit."""
+    segs = []
+    for item in re.split(r"(\s\|\s)", re.sub(r"</?[ib]>", "", text)):
+        word, eq, meaning = item.partition(" = ")
+        if eq and word.strip():
+            segs += [{"t": word, "i": False, "b": True}, {"t": " = " + meaning, "i": False, "b": False}]
+        elif item:
+            segs.append({"t": item, "i": False, "b": False})
+    return segs
+
+
+# Labels that stand alone as headings ("SECTION 13", "TRANSLATION", "PURPORT"): centred, and not listed in the contents
+LABEL_HEADING_RE = re.compile(r"^(section|translation|purport|texts?|synonyms|verses?|commentary|comments?|summary|part|chapter)\b[\s\d.:IVXLC-]*$", re.I)
+
+
+def plain_text(segs: list[dict]) -> str:
+    return re.sub(r"\s+", " ", "".join(s["t"] for s in segs)).strip()
+
+
+def mark_headings(front: list[dict], chapters: list[dict]) -> None:
+    """Subheadings: label-like or all-capitals ones are centred; every other (unique) one is a subtopic that the contents lists under
+    its chapter, with its page — so the contents shows the chapter names and the topics inside each chapter."""
+    from collections import Counter
+    plain = lambda b: plain_text(b["segs"])  # noqa: E731
+    counts = Counter(plain(b) for ch in chapters for b in ch["blocks"] if b["type"] == "h")
+    for sec in front:
+        for b in sec["blocks"]:
+            if b["type"] == "h" and (LABEL_HEADING_RE.match(plain(b)) or (plain(b).isupper() and len(plain(b)) < 60)):
+                b["centre"] = True
+    for ci, ch in enumerate(chapters):
+        k = 0
+        for b in ch["blocks"]:
+            if b["type"] != "h":
+                continue
+            text = plain(b)
+            label = bool(LABEL_HEADING_RE.match(text))
+            if label or (text.isupper() and len(text) < 60):
+                b["centre"] = True
+            if not label and 2 < len(text) <= 120 and not text.endswith((",", ";")) and (counts[text] <= 2 if not text.isupper() else counts[text] == 1 and not re.search(r"\d", text)):
+                b["id"] = f"sub-{ci}-{k}"  # the template labels it, so the contents can link to it and show its page
+                k += 1
 
 
 def split_signature(paragraphs: list[str]) -> tuple[list[str], str]:
@@ -79,7 +141,7 @@ class FigureCropper:
         self.count += 1
         figure = figure or crop_figure(self.pdf, b["page"], b["bbox"], b["image_bbox"])
         path = self.build_dir / f"figure-{self.count:03d}.jpg"
-        figure.save(path, quality=78, optimize=True)
+        figure.save(path, quality=90, optimize=True)
         return {"path": typst_path(path), "aspect": figure.height / figure.width, "wide": b.get("wide", False),
                 "caption": to_segments(b["caption"]) if b["caption"] else []}
 
@@ -88,13 +150,16 @@ def typed_block(b: dict, indent: bool, figures: FigureCropper) -> dict:
     """Assembled block → template block; rich text becomes segments, verse lines stay as plain lines, figures get cropped."""
     out = {"type": b["type"], "indent": indent}
     if b["type"] == "quote":
-        out["lines"] = b["lines"]
+        out["lines"] = [safe(l) for l in b["lines"]]
     elif b["type"] == "centred":
         out["lines"] = [to_segments(l) for l in b["lines"]]
     elif b["type"] == "table":
         out["rows"] = [[to_segments(c) for c in row] for row in b["rows"]]
     elif b["type"] == "figure":
         out.update(figures.place(b))
+    elif b["type"] == "p" and is_gloss(b["text"]):
+        out["segs"] = gloss_equals_segments(b["text"])
+        out["indent"] = False
     elif b["type"] != "break":
         out["segs"] = to_segments(b["text"])
     return out
@@ -121,7 +186,7 @@ def from_verses_book(assembled: dict, figures: FigureCropper) -> tuple[list, lis
         "blocks": [{"type": "p", "indent": False, "segs": to_segments(p)} for p in ch["intro"]],
         "verses": [{
             "number": v["number"],
-            "sanskrit": v["sanskrit"],
+            "sanskrit": [safe(l) for l in v["sanskrit"]],
             "word_for_word": gloss_segments(v["word_for_word"]),
             "translations": [{"label": t["label"], "paragraphs": [to_segments(p) for p in t["paragraphs"]]} for t in v["translations"]],
             "poet": v["poet"],
@@ -217,6 +282,7 @@ def build_typst_data(book: str, build_dir: Path) -> dict:
     cover_data = {"path": typst_path(cover_path), "aspect": cover.height / cover.width}
     frontispiece = front_figures(book, first_text_page(book, assembled), figures, set(meta.get("frontispiece_skip", [])))
     front, chapters = (from_prose_book if meta["layout"] == "prose" else from_verses_book)(assembled, figures)
+    mark_headings(front, chapters)
     copyright_lines = copyright_page(book, first_text_page(book, assembled), meta.get("strip_text", [])) if meta.get("keep_copyright") else None
     return {"meta": meta, "layout": meta["layout"], "cover": cover_data, "copyright": copyright_lines, "frontispiece": frontispiece,
             "front": front, "chapters": chapters}

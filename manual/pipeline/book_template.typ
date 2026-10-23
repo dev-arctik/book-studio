@@ -12,6 +12,8 @@
 #set document(title: meta.title, author: meta.author)
 #set text(font: "Gentium Book Plus", size: 11pt, lang: "en", hyphenate: true)
 #set par(justify: true, leading: 0.62em, spacing: 0.9em)
+// A chapter's topics are real headings (contents, PDF bookmarks) but look exactly like the bold accent lines the book already had
+#show heading.where(level: 2): it => it.body
 
 // Rich text arrives as segments [{t, i, b}] — italics/bold kept from the scan
 #let rich(segs) = segs.map(s => {
@@ -91,7 +93,10 @@
       }
     }))
   } else if b.type == "h" {
-    block(above: 1.3em, below: 0.6em, sticky: true, text(fill: accent, size: 10.5pt, weight: "bold", rich(b.segs)))
+    // Label-like headings ("SECTION 13", "TRANSLATION") are centred; the others are the chapter's topics, listed in the contents and the bookmarks
+    let body = text(fill: accent, size: 10.5pt, weight: "bold", rich(b.segs))
+    let shown = if b.at("centre", default: false) { block(width: 100%, above: 1.3em, below: 0.6em, sticky: true, align(center, body)) } else { block(above: 1.3em, below: 0.6em, sticky: true, body) }
+    if b.at("id", default: none) != none { [#heading(level: 2, outlined: true, shown) #label(b.id)] } else { shown }
   } else if b.type == "break" {
     // Scene break ("* * * *" in the original)
     block(width: 100%, above: 1em, below: 1em, align(center, text(fill: accent, tracking: 0.6em)[\* \* \*]))
@@ -233,6 +238,18 @@
         else [#emph(ch.title) #if ch.subtitle != "" { text(fill: soft, size: 9pt)[— #ch.subtitle] }],
         str(counter(page).at(loc).first()),
       )))
+    }
+    // The topics inside the chapter, a step in
+    for b in ch.blocks.filter(b => b.type == "h" and b.at("id", default: none) != none) {
+      context {
+        let loc = locate(label(b.id))
+        block(below: 0.35em, link(loc, grid(
+          columns: (2em, 1fr, auto), column-gutter: 0.6em,
+          [],
+          text(size: 9pt, fill: soft, rich(b.segs)),
+          text(size: 9pt, fill: soft, str(counter(page).at(loc).first())),
+        )))
+      }
     }
   }
 
