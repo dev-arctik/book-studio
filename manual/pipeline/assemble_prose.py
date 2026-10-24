@@ -768,6 +768,7 @@ METHODS = {
     "contents": "the book's contents page",
     "skipping": "the book's contents page, skipping entries that weren't found (the contents didn't match well — check)",
     "headings": "the headings on the pages — the contents page couldn't be matched (check the chapters)",
+    "pages": "the sections listed by page in the book's settings (sections_by_page) — the printed contents was not used",
     "whole": "nothing usable — the whole book is one section (no contents or headings could be matched)",
 }
 
@@ -961,8 +962,12 @@ def main():
     # The book's own contents as matched, kept for the report even when another way of finding the chapters is used
     own_contents = contents
     _, _, own_missed, own_matched = attempt(contents, opts, inserted)
-    contents, opts, inserted, (sections, skipped, missed, matched), method = find_chapters(
-        blocks, contents, opts, inserted, attempt, set(range(1, max(contents_info.get("pages") or [0]) + 1)), meta.get("title") or book)
+    if meta.get("sections_by_page"):  # every section given by its scan page in "insert_sections": for a book whose headings are decorations the reader cannot read
+        contents, method = [], "pages"
+        (sections, skipped, missed, matched) = attempt(contents, opts, inserted)
+    else:
+        contents, opts, inserted, (sections, skipped, missed, matched), method = find_chapters(
+            blocks, contents, opts, inserted, attempt, set(range(1, max(contents_info.get("pages") or [0]) + 1)), meta.get("title") or book)
 
     # Back cover = ISBN page plus the unnumbered cover pages before it; without an ISBN on it, the scan's unnumbered last page
     # built around a big picture (Saṁskāras: a blurb panel that otherwise became the last chapter's "figure" and paragraph).

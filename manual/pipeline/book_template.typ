@@ -234,7 +234,7 @@
         columns: (2em, 1fr, auto), column-gutter: 0.6em,
         text(fill: soft)[#if ch.number != none [#ch.number.]],
         // Part rows stand out as group titles; chapters list title and subtitle
-        if ch.at("part", default: false) { text(fill: accent, weight: "bold")[#ch.subtitle: #ch.title] }
+        if ch.at("part", default: false) { text(fill: accent, weight: "bold")[#if ch.subtitle != "" [#ch.subtitle: ]#ch.title] }
         else [#emph(ch.title) #if ch.subtitle != "" { text(fill: soft, size: 9pt)[— #ch.subtitle] }],
         str(counter(page).at(loc).first()),
       )))
