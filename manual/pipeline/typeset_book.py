@@ -161,7 +161,10 @@ def typed_block(b: dict, indent: bool, figures: FigureCropper) -> dict:
         out["segs"] = gloss_equals_segments(b["text"])
         out["indent"] = False
     elif b["type"] != "break":
-        out["segs"] = to_segments(b["text"])
+        text = b["text"]
+        if b["type"] == "h":
+            text = re.sub(r"\s*[❖◆♦•✦]\s*", " ", text).strip()  # decorative marks round a printed heading (❖ Title ❖) are left out
+        out["segs"] = to_segments(text)
     return out
 
 
@@ -245,18 +248,20 @@ def first_text_page(book: str, assembled: dict) -> int:
 COPYRIGHT_RE = re.compile(r"©|copyright|all rights reserved|\bisbn\b|printed in|published by", re.I)
 
 
-def copyright_page(book: str, first_page: int, strip: list = ()) -> list[list[list[dict]]] | None:
+def copyright_page(book: str, first_page: int, strip: list = (), only_page: int | None = None) -> list[list[list[dict]]] | None:
     """The book's own copyright page (©, ISBN, publisher) from its front pages, as blocks of lines, set faithfully as printed.
     Only used when the book's settings say "keep_copyright" — the approved design leaves it out. Scans read the OCR text;
     digital PDFs (no OCR pages) read the PDF's own text."""
     pages = [(n, [clean_inline(b["html"]) for b in blocks if b["label"] not in PICTURE_LABELS and b.get("html")])
-             for n, blocks in ocr_pages(book) if n < first_page]
+             for n, blocks in ocr_pages(book) if n < first_page or n == only_page]
     if not pages:
         import pymupdf
         with pymupdf.open(local_env.find_book(book)) as pdf:
             pages = [(n + 1, page_blocks_text(pdf[n])) for n in range(min(first_page - 1, len(pdf)))]  # decoded like the book's text
     best, best_hits = None, 1
     for n, texts in pages:
+        if only_page and n != only_page:  # book_meta.json "copyright_page": the page checked by hand (the cover also says "Copyrighted material")
+            continue
         hits = len(COPYRIGHT_RE.findall(" ".join(texts)))
         if hits > best_hits:
             best, best_hits = (n, texts), hits
@@ -283,7 +288,7 @@ def build_typst_data(book: str, build_dir: Path) -> dict:
     frontispiece = front_figures(book, first_text_page(book, assembled), figures, set(meta.get("frontispiece_skip", [])))
     front, chapters = (from_prose_book if meta["layout"] == "prose" else from_verses_book)(assembled, figures)
     mark_headings(front, chapters)
-    copyright_lines = copyright_page(book, first_text_page(book, assembled), meta.get("strip_text", [])) if meta.get("keep_copyright") else None
+    copyright_lines = copyright_page(book, first_text_page(book, assembled), meta.get("strip_text", []), meta.get("copyright_page")) if meta.get("keep_copyright") else None
     return {"meta": meta, "layout": meta["layout"], "cover": cover_data, "copyright": copyright_lines, "frontispiece": frontispiece,
             "front": front, "chapters": chapters}
 
