@@ -1,6 +1,6 @@
 # manual/pipeline/power.py
 # Keeps the computer awake while books are made (a laptop that sleeps stops reading pages for hours) and watches the battery,
-# so reading pauses before a laptop runs flat and continues once it is plugged in. Used by run_book.py and Book Studio's worker.
+# so reading pauses the moment the charger is unplugged (a power cut would lose the pages in progress) and continues once it is plugged in. Used by run_book.py and Book Studio's worker.
 # The screen may still turn off — only system sleep is held off, and only while the book is being made.
 
 import json
@@ -10,7 +10,6 @@ import sys
 import time
 from contextlib import contextmanager
 
-LOW_BATTERY = 50  # % on battery: below this, reading pauses between page batches (raised from 15 on 2026-10-20: leaves room to plug in)
 # Cool-down rests, so a laptop reading pages for hours does not run hot (the same idea as Book Studio's work/rest settings)
 WORK_MINUTES = 60  # reading time before a rest
 REST_MINUTES = 15  # the rest after every WORK_MINUTES of reading
@@ -28,20 +27,22 @@ def battery() -> tuple[int, bool] | None:
     return None if b is None else (int(b.percent), bool(b.power_plugged))
 
 
-def battery_low() -> bool:
+def on_battery() -> bool:
+    """True when a laptop runs on its battery at any charge: reading pauses at once (Devansh, 2026-10-25: his battery holds only ~26 % of its
+    design capacity and dies within minutes; a power cut loses the pages in progress). A computer with no battery is never paused."""
     b = battery()
-    return b is not None and not b[1] and b[0] < LOW_BATTERY
+    return b is not None and not b[1]
 
 
 def power_back() -> bool:
     b = battery()
-    return b is None or b[1]  # only the charger resumes reading: a battery can't charge itself back above the limit
+    return b is None or b[1]  # only the charger resumes reading
 
 
 def wait_for_power(on_pause=lambda percent: None, on_resume=lambda: None, stop=lambda: False, poll: float = 5) -> bool:
-    """Waits while a laptop is on battery below LOW_BATTERY, until the charger is plugged in.
+    """Waits while a laptop is unplugged (running on its battery), until the charger is plugged in.
     Returns False if stop() asked to end the wait instead."""
-    if not battery_low():
+    if not on_battery():
         return True
     on_pause(battery()[0])
     while not power_back():

@@ -26,7 +26,7 @@ from . import style
 from .book_list import BookList, RowState
 from .book_panel import BookPanel
 from .dialogs import CheckDialog, FixesDialog, OutputDialog, SettingsDialog, SetupDialog, Task, UpdatesDialog, offer_update
-from power import LOW_BATTERY, battery, keep_awake  # noqa: E402  (manual/pipeline/power.py, shared with the worker)
+from power import battery, keep_awake  # noqa: E402  (manual/pipeline/power.py, shared with the worker)
 
 SCAN_STEPS = ["Read", "Chapters", "PDF", "EPUB"]
 DIGITAL_STEPS = ["Text", "PDF", "EPUB"]
@@ -441,7 +441,7 @@ class MainWindow(QMainWindow):
                     st.status, st.colour = f"Resting to cool down — {fmt_clock(self.rest_until - time.monotonic())}", style.WARN
                     st.detail = f"{info['done']} of {info['total']} pages read"
                 elif self.phase == "battery":
-                    st.status, st.colour = f"Battery low ({self.battery_pct} %) — paused", style.BAD
+                    st.status, st.colour = f"Unplugged ({self.battery_pct} %) — paused", style.BAD
                     st.detail = "plug in the charger — it continues by itself"
                 elif self.phase == "paused":
                     st.status, st.colour = "Paused", style.WARN
@@ -628,7 +628,7 @@ class MainWindow(QMainWindow):
             self.awake = None
 
     def _refresh_power(self):
-        """While books are being made: plugged in (keep the lid open) or on battery (plug in; pauses below 15 %)."""
+        """While books are being made: plugged in (keep the lid open) or on battery (plug in; pauses while unplugged)."""
         working = self.runner is not None or bool(self.between_until)
         b = battery() if working else None
         self.power_line.setVisible(b is not None)
@@ -640,7 +640,7 @@ class MainWindow(QMainWindow):
                                     "made — keep the lid open")
         else:
             self.power_line.setText(f"<span style='color:{style.WARN}'><b>🔋 On battery ({percent} %) — please plug in the charger.</b></span> "
-                                    f"Book Studio pauses by itself below {LOW_BATTERY} %.")
+                                    "Book Studio pauses by itself while the charger is unplugged.")
 
     # ---------- rows: click, tick, menu ----------
 
@@ -794,7 +794,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.information(self, "Plug in the charger",
                                         f"This computer is on battery ({b[0]} %). Making books takes hours — please plug in the charger "
                                         "and keep the lid open.\n\nBook Studio keeps the computer awake while it works, and pauses by itself "
-                                        f"if the battery drops below {LOW_BATTERY} %.")
+                                        "whenever the charger is unplugged.")
         self.run_ids += todo
         self.queue += todo
         self.stop_requested = False

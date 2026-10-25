@@ -117,7 +117,7 @@ def main():
         return
     total = len(pdfium.PdfDocument(str(pdf_path)))
     first, last = (int(sys.argv[2]), int(sys.argv[3])) if len(sys.argv) > 3 else (1, total)
-    low = lambda pct: print(f"Battery at {pct}% — paused until the charger is plugged in…", flush=True)  # noqa: E731
+    low = lambda pct: print(f"Charger unplugged (battery {pct}%) — paused until it is plugged in…", flush=True)  # noqa: E731
     todo = [n for n in range(first, last + 1) if not page_done(out_dir / f"page-{n:03d}.json")]
     marker = local_env.WORKSPACE_DIR / ".last-ocr-finished"  # its time = when the last book's reading ended
     state_file = local_env.WORKSPACE_DIR / ".reading-state"  # what the OCR is doing now (working / resting + countdown), for progress.py

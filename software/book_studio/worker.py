@@ -64,7 +64,7 @@ def rest(seconds: int) -> None:
 
 
 def wait_for_power() -> None:
-    """Low battery: pause between page batches until the laptop is plugged in (or recharged), so it never runs flat mid-book."""
+    """Unplugged: pause between page batches until the charger is back, so a power cut never loses pages mid-book."""
     import power
 
     if not power.wait_for_power(lambda percent: emit("battery", percent=percent), lambda: emit("resumed"),
