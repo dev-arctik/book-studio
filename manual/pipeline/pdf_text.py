@@ -65,6 +65,8 @@ def page_blocks_text(page) -> list[str]:
 
 DROP_FONTS: tuple = ()  # font-name prefixes whose text is decoration (a faded mantra used as page background), set per book
 BOLD_PARA_PAGES: set[int] = set()  # pages (0-based) where a line opening with a bold term starts a new paragraph (a glossary)
+LINE_PAGES: set[int] = set()  # pages (0-based) where every line is its own item (a list of names): book_meta.json "line_pages" [first, last] scan pages
+DEEP_FIRST_LINES = False  # book_meta.json "deep_first_lines": an indented quote whose first line sits one step deeper than the rest (72 pt, then 54 pt) is ONE block, not two
 FIRST_INDENT_MAX = 25  # pt — a line this far right of the margin or less is a paragraph's first-line indent; book_meta.json "first_indent_max" sets it per book (a Word book indents 35 pt)
 BULLET_FONTS: tuple = ()  # font-name prefixes of a dingbat font whose letters are bullet marks ("O" = a round bullet): book_meta.json "bullet_fonts"
 PAGE_NUMBER_BAND = 0.9  # a bare number below this share of the page height is a page number; "page_number_band" in book_meta.json (a number in a box a little higher)
@@ -78,10 +80,11 @@ PAGE_SCALE: dict[int, float] = {}  # per page (0-based): factor for every font s
 PAGE_SHIFT: dict[int, float] = {}  # per page (0-based): points added to every x, so mirrored facing pages share one left margin
 
 
-def page_shifts(pdf) -> dict[int, float]:
+def page_shifts(pdf, limit: float = 10) -> dict[int, float]:
     """Facing pages are often mirrored: body text starts at x=47 on left pages and x=54 on right ones, which breaks the first-line
     indent test. Each page's own margin (its most common body-line start) is moved to the book's most common one; pages with too
-    few lines to tell, or a shift over 10 pt (an indented verse page), are left alone."""
+    few lines to tell, or a shift over `limit` pt (10 by default: an indented verse page), are left alone; a number in book_meta.json
+    "mirrored_pages" raises the limit for a book whose margins differ by more (Prabandhāvalī: 18, 36 and 54 pt)."""
     sizes = Counter()
     for page in pdf:
         for l in page_lines(page):
@@ -94,7 +97,7 @@ def page_shifts(pdf) -> dict[int, float]:
             per_page[page.number] = starts.most_common(1)[0][0]
             overall[per_page[page.number]] += 1
     target = overall.most_common(1)[0][0]
-    return {n: target - x for n, x in per_page.items() if 0 < abs(target - x) <= 10}
+    return {n: target - x for n, x in per_page.items() if 0 < abs(target - x) <= limit}
 
 RUNNING_HEADS: set[str] = set()  # texts printed at the very top of many pages, set per book by pdf_to_book via running_heads()
 TOP_BAND = 0.07  # a running head sits within this share of the page height from the top
@@ -229,9 +232,13 @@ def paragraphs(pages: list[list[dict]], body: float, pitch: float, right: float,
                 continue
             kind = kind_of(l["size"], body)
             last = paras[-1] if paras else None
-            if i == 0:
+            if page_no in LINE_PAGES and kind == "p" and l["size"] < body - 1:
+                new = True  # a list: one line, one item
+            elif i == 0:
                 # Continue a paragraph cut by the page break only if it stopped mid-sentence
                 new = not (last and last["kind"] == kind == "p" and not last["text"].rstrip().endswith(TERMINAL))
+                if re.match(r"Chapter\s+[\w-]+(\s|$)", l["text"]):
+                    new = True  # a page that opens with "Chapter Thirty-five …" begins a chapter, whatever the page before ended on
                 if margin is not None and last and last["text"].rstrip().endswith("]"):
                     new = True  # a source line ("[Srimad-Bhagavatam 1.8.42]") at a page's foot ends its block
             elif "object" in lines[i - 1]:
@@ -248,6 +255,8 @@ def paragraphs(pages: list[list[dict]], body: float, pitch: float, right: float,
                 if margin is not None and kind == "p" and not new:
                     before, now = indent_band(lines[i - 1]["x0"], margin), indent_band(l["x0"], margin)
                     new = before != now and (before, now) != (1, 0)  # a first line's indent followed by full lines is one paragraph
+                    if DEEP_FIRST_LINES and (before, now) == (2, 1):
+                        new = False  # a quote's deeper first line, then its lines at the normal first-line indent
                     if (before, now) == (0, 1) and indent is not None and abs(l["x0"] - indent) > 2.5:
                         new = False  # a hanging line (a note's second line), not a new paragraph's indent
                     # In an indented block, plain → italic (a translation, then its Sanskrit verse) starts a new block

@@ -175,6 +175,8 @@ def section_of(title: str, page: int) -> dict:
     """Kind and display title from an outline entry: "1: Foundations: …" is chapter 1; Foreword/Introduction/Dedication are front matter."""
     if m := re.match(r"^(\d+)\s*:\s*(.+)$", title):
         return {"kind": "chapter", "title": m.group(2).strip(), "start_page": page}
+    if m := re.match(r"^(Part \w+)\s*:\s*(.+)$", title):
+        return {"kind": "part", "title": m.group(1), "subtitle": m.group(2).strip(), "start_page": page}  # "Part One: Pūrva-campū — …": a part title page (book_meta.json sections)
     first = title.split(":")[0].split("&")[0].strip().lower()
     kind = "front" if first in ("foreword", "introduction", "dedication", "preface", "acknowledgements", "acknowledgments", "maṅgalācaraṇa") else "back"
     return {"kind": kind, "title": title, "start_page": page}
@@ -263,6 +265,9 @@ def convert(book: str) -> None:
         first_pg, last_pg = meta["bold_paragraph_pages"]
         pdf_text.BOLD_PARA_PAGES = set(range(first_pg - 1, last_pg))
     pdf_text.FIRST_INDENT_MAX = meta.get("first_indent_max", pdf_text.FIRST_INDENT_MAX)
+    pdf_text.DEEP_FIRST_LINES = bool(meta.get("deep_first_lines", False))
+    line_pages = set(range(meta["line_pages"][0], meta["line_pages"][1] + 1)) if meta.get("line_pages") else set()  # a list of names: one line, one item
+    pdf_text.LINE_PAGES = {n - 1 for n in line_pages}
     pdf_text.DROP_LINES = meta.get("drop_lines", [])
     pdf_text.BULLET_FONTS = tuple(meta.get("bullet_fonts", []))
     pdf_text.PAGE_NUMBER_BAND = meta.get("page_number_band", pdf_text.PAGE_NUMBER_BAND)
@@ -270,7 +275,7 @@ def convert(book: str) -> None:
     pdf_text.HEAL_ENGLISH = bool(meta.get("heal_hyphens"))
     pdf_text.HEADING_EXTRA = meta.get("heading_extra", pdf_text.HEADING_EXTRA)
     if meta.get("mirrored_pages"):  # facing pages with mirrored margins: align each page's margin before measuring indents
-        pdf_text.PAGE_SHIFT = pdf_text.page_shifts(pdf)
+        pdf_text.PAGE_SHIFT = pdf_text.page_shifts(pdf, meta["mirrored_pages"] if isinstance(meta["mirrored_pages"], (int, float)) and not isinstance(meta["mirrored_pages"], bool) else 10)
     # Topics the PDF's own outline lists below its chapters (levels 2 and 3): a line in the text with the same words is a subheading,
     # so the contents shows them under their chapter as the original does
     topic_pages: dict[str, set[int]] = {}
@@ -318,12 +323,14 @@ def convert(book: str) -> None:
     cuts = []
     if any(markers):
         for (_, page, _, _), mark in zip(outline, markers):
-            cuts.append(next((k for k, p in enumerate(paras) if p["page"] + 1 >= page and (not mark or p["page"] + 1 == page and re.sub(r"\s+", " ", p["text"]).lstrip().startswith(mark))), len(paras)))
+            cuts.append(next((k for k, p in enumerate(paras) if p["page"] + 1 >= page and (not mark or p["page"] + 1 == page and re.sub(r"\W", "", re.sub(r"<[^>]+>", "", p["text"] or " ".join(p["object"].get("lines", [])) if p["kind"] == "object" else p["text"])).lower().startswith(re.sub(r"\W", "", mark).lower()))), len(paras)))
+            if mark and cuts[-1] == len(paras):
+                print(f"  ! marker not found on page {page}: {mark!r}")  # the section would come out empty  # (a centred heading is an object: its lines are the text)
     for i, (title, page, kind, lead) in enumerate(outline):
         end = outline[i + 1][1] if i + 1 < len(outline) else len(pdf) + 1
         if title.lower() in skip_titles:
             continue
-        sec = {**section_of(title, page), "subtitle": "", "cover": None, "numeral": "", "footnotes": [], "blocks": []}
+        sec = {"subtitle": "", "cover": None, "numeral": "", "footnotes": [], "blocks": [], **section_of(title, page)}
         if title.lower() in front_titles:
             sec["kind"] = "front"  # book_meta.json "front_sections": titles that open the book (about the author, dedication, how to use it…)
         if kind:
@@ -341,9 +348,10 @@ def convert(book: str) -> None:
         if cuts and markers[i] and mine and mine[0]["text"].strip() == markers[i]:
             mine.pop(0)  # the heading line that opens the section repeats its title
         popped = []
-        while not meta.get("no_title_block") and mine and (mine[0]["kind"] not in ("p", "object") or enlarged(mine[0])):  # "no_title_block": chapters start straight with their first story, no title page
+        centred_title = lambda p: bool(meta.get("centred_title_block")) and p["kind"] == "object" and p["object"]["type"] == "centred" and sec["kind"] == "chapter"  # noqa: E731  (a chapter whose label and title are centred line objects)
+        while not meta.get("no_title_block") and mine and (mine[0]["kind"] not in ("p", "object") or enlarged(mine[0]) or centred_title(mine[0])):  # "no_title_block": chapters start straight with their first story, no title page
             head = mine.pop(0)
-            popped.append(re.sub(r"\s+", " ", " ".join(r["text"].strip() for r in head["runs"] if not r.get("break"))).strip())
+            popped.append(re.sub(r"\s+", " ", " ".join(re.sub(r"<[^>]+>", "", l) for l in head["object"]["lines"]) if head["kind"] == "object" else " ".join(r["text"].strip() for r in head["runs"] if not r.get("break"))).strip())
             author = " ".join(r["text"].strip() for r in head["runs"] if not r.get("break") and r.get("italic") and r["text"].strip())
             if author:
                 sec["subtitle"] = re.sub(r"\s+", " ", author)
@@ -364,6 +372,11 @@ def convert(book: str) -> None:
                 if obj["type"] in ("centred", "quote") and is_topic(" ".join(re.sub(r"<[^>]+>", "", l) for l in obj["lines"]), p["page"] + 1):
                     sec["blocks"].append({"type": "h", "text": " ".join(re.sub(r"<[^>]+>", "", l) for l in obj["lines"]).strip()})  # a line the PDF's own outline lists
                     continue
+                if meta.get("bold_headings") and obj["type"] == "centred" and len(obj["lines"]) == 1 and re.fullmatch(r"<b>[^<]{3,90}</b>", obj["lines"][0].strip()):  # one bold centred line = a subheading (opt-in)
+                    heading = re.sub(r"<[^>]+>", "", obj["lines"][0]).strip()
+                    if re.sub(r"\W", "", heading.lower()) != re.sub(r"\W", "", sec["title"].lower()):
+                        sec["blocks"].append({"type": "h", "text": heading})
+                    continue
                 sec["blocks"].append(obj)
                 continue
             text = runs_text(p["runs"], body)
@@ -378,10 +391,14 @@ def convert(book: str) -> None:
                 continue
             words = [r for r in p["runs"] if not r.get("break") and r["text"].strip()]
             italic = bool(words) and all(r["italic"] for r in words)
-            caps_heading = len(p["text"]) < 60 and p["text"].isupper() and len(p["text"].split()) <= 6 and sum(c.isalpha() for c in p["text"]) >= 6  # "FINANCIAL", "HEALTH": a typed-up book's subheading
-            if p["kind"] != "p" or caps_heading or (sec["title"] == "Notes" and re.fullmatch(r"(Foreword|Introduction|Chapter \d+|Concluding Words)", p["text"])):
-                if re.sub(r"\W", "", flat.lower()) != re.sub(r"\W", "", sec["title"].lower()):  # (not the section's own title again)
-                    sec["blocks"].append({"type": "h", "text": flat})  # in Notes: the chapter each group of notes belongs to
+            caps_heading = len(p["text"]) < 60 and p["text"].isupper() and len(p["text"].split()) <= 6 and sum(c.isalpha() for c in p["text"]) >= 6 and not p["text"].rstrip().endswith(("”", '"'))  # "FINANCIAL", "HEALTH": a typed-up book's subheading (not the capitals ending a quoted sentence: EVEN THE AIRPORT.”)
+            if p["kind"] == "p" and p["page"] + 1 in line_pages and p["runs"] and p["runs"][0].get("size", body) < body - 1:  # (only the list's small print, not text that shares the page)
+                sec["blocks"].append({"type": "entry", "text": flat})
+                continue
+            bold_heading = bool(meta.get("bold_headings")) and p["kind"] == "p" and 2 < len(p["text"]) < 90 and bool(words) and all(r["bold"] for r in words) and not p["text"].rstrip().endswith((".", ",", ";"))  # a bold line at body size is a subheading (opt-in: Rosen's Milwaukee to Mayapur)
+            if p["kind"] != "p" or caps_heading or bold_heading or (sec["title"] == "Notes" and re.fullmatch(r"(Foreword|Introduction|Chapter \d+|Concluding Words)", p["text"])):
+                if re.sub(r"\W", "", re.sub(r"<[^>]+>", "", flat).lower()) != re.sub(r"\W", "", sec["title"].lower()):  # (not the section's own title again, bold or not)
+                    sec["blocks"].append({"type": "h", "text": re.sub(r"<[^>]+>", "", flat).strip() if bold_heading else flat})  # in Notes: the chapter each group of notes belongs to
             elif p["bullet"]:  # "In this chapter you will learn:" items, printed after a check-mark icon
                 sec["blocks"].append({"type": "entry", "text": "• " + flat})
             elif re.fullmatch(r"\[.*\]", p["text"].strip()):

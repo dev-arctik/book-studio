@@ -924,6 +924,9 @@ def main():
     if last := meta.get("last_page"):
         blocks = [b for b in blocks if b["page"] <= last]
     blocks = reorder_pages(blocks, set(meta.get("skip_pages", [])), meta.get("page_moves", []))
+    # "drop_pictures": pages whose picture is decoration (a framed ornament with the chapter's name inside it) — the text stays
+    drop_pictures = set(meta.get("drop_pictures", []))
+    blocks = [b for b in blocks if not (b["page"] in drop_pictures and b["label"] in PICTURE_LABELS)]
     # "strip_text": regexes removed from every block (a scanner's watermark line printed on each page); a block left empty goes
     for rx in meta.get("strip_text", []):
         for b in blocks:
@@ -1004,6 +1007,8 @@ def main():
     # Captions the OCR swallowed into the picture box (checked against the scan) come from book_meta.json
     for s in sections:
         for b in s.blocks:
+            if b["type"] == "h":
+                b["text"] = re.sub(r"\s*\n\s*", " ", b["text"])  # a heading the page breaks over two lines is one line
             if b["type"] == "figure" and not b["caption"]:
                 b["caption"] = meta.get("figure_captions", {}).get(str(b["page"]), "")
 
