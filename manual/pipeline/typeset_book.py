@@ -91,9 +91,10 @@ def plain_text(segs: list[dict]) -> str:
     return re.sub(r"\s+", " ", "".join(s["t"] for s in segs)).strip()
 
 
-def mark_headings(front: list[dict], chapters: list[dict]) -> None:
+def mark_headings(front: list[dict], chapters: list[dict], topics: bool = True) -> None:
     """Subheadings: label-like or all-capitals ones are centred; every other (unique) one is a subtopic that the contents lists under
-    its chapter, with its page — so the contents shows the chapter names and the topics inside each chapter."""
+    its chapter, with its page — so the contents shows the chapter names and the topics inside each chapter.
+    topics=False ("no_topics" in book_meta.json): the headings are screenplay cues or labels, so none is listed in the contents."""
     from collections import Counter
     plain = lambda b: plain_text(b["segs"])  # noqa: E731
     counts = Counter(plain(b) for ch in chapters for b in ch["blocks"] if b["type"] == "h")
@@ -110,7 +111,7 @@ def mark_headings(front: list[dict], chapters: list[dict]) -> None:
             label = bool(LABEL_HEADING_RE.match(text))
             if label or (text.isupper() and len(text) < 60):
                 b["centre"] = True
-            if not label and 2 < len(text) <= 120 and not text.endswith((",", ";")) and (counts[text] <= 2 if not text.isupper() else counts[text] == 1 and not re.search(r"\d", text)):
+            if topics and not label and 2 < len(text) <= 120 and not text.endswith((",", ";")) and (counts[text] <= 2 if not text.isupper() else counts[text] == 1 and not re.search(r"\d", text)):
                 b["id"] = f"sub-{ci}-{k}"  # the template labels it, so the contents can link to it and show its page
                 k += 1
 
@@ -287,7 +288,7 @@ def build_typst_data(book: str, build_dir: Path) -> dict:
     cover_data = {"path": typst_path(cover_path), "aspect": cover.height / cover.width}
     frontispiece = front_figures(book, first_text_page(book, assembled), figures, set(meta.get("frontispiece_skip", [])))
     front, chapters = (from_prose_book if meta["layout"] == "prose" else from_verses_book)(assembled, figures)
-    mark_headings(front, chapters)
+    mark_headings(front, chapters, not meta.get("no_topics", False))
     copyright_lines = copyright_page(book, first_text_page(book, assembled), meta.get("strip_text", []), meta.get("copyright_page")) if meta.get("keep_copyright") else None
     return {"meta": meta, "layout": meta["layout"], "cover": cover_data, "copyright": copyright_lines, "frontispiece": frontispiece,
             "front": front, "chapters": chapters}
