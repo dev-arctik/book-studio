@@ -59,6 +59,7 @@ Scanned ISKCON books → clean, diacritic-correct PDFs for kids at a charity you
 | `book_template.typ` | The page design (Typst). Reads JSON via `sys.inputs.data` — never escape book text into Typst code |
 | `book_meta.json` | Per book: title, subtitle, author, credits, `layout`, `academic` (page footnotes + indented quotations, geometry-based), `unnumbered_sections`, `text_fixes`, `figure_captions` |
 | `pdf_to_book.py` | Stage 2 for clean digital PDFs (no OCR): outline → sections, paragraphs by first-line indent (opt-in `margin`/`indent` rules in pdf_text), drop caps rejoined, check-mark-icon list items, tables rebuilt from small print using drawn cell edges (zebra rows defeat `find_tables`), centred lists, verses/translations/[sources] → same `book.json` |
+| `book_tidy.py` | Digital route clean-ups, on with `"tidy": true`: verse + translation blocks, bold subheadings, signatures, centred breaks, capital openings |
 | `pdf_text.py` | Shared reader for text PDFs (used by the two below): lines → paragraphs by line gap, headings by size, bold/italic, verse breaks; decodes old **Balaram**-font diacritics ("Kåñëa" → Kṛṣṇa) |
 | `pdf_to_epub.py` | Text PDF with an outline → `.epub` beside it: chapters from the outline, cover from page 1, copyright and printed-contents pages left out |
 | `book_to_epub.py` | Processed book (`book.json`) → `workspace/<book>/4-epub/<book>.epub` with all figures; reuses `typeset_book.build_typst_data` (same crops as the PDF). Verse anthologies too (verse no., centred Sanskrit, bold-word gloss, translation, poet) |

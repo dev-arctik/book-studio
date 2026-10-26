@@ -16,7 +16,8 @@ from collections import Counter
 import pymupdf
 
 import pdf_text
-from ocr_text import ends_sentence, join_lines, tidy_dedication  # noqa: F401
+from book_tidy import tidy_sections
+from ocr_text import tidy_dedication
 from pdf_text import balaram_fonts, body_metrics, indent_band, page_lines, paragraphs, running_heads
 
 META_FILE = local_env.META_FILE
@@ -433,6 +434,9 @@ def convert(book: str) -> None:
     apply_fixes(sections, meta)
     for sec in sections:
         sec["blocks"] = join_cut_paragraphs(sec["blocks"])  # a fix may leave a paragraph cut mid-sentence
+    if meta.get("tidy"):  # "tidy": true — verses, translations, subheadings, signatures, capital openings, breaks (book_tidy.py)
+        tidy_sections(sections, meta)
+    for sec in sections:
         if re.search(r"dedicat", sec["title"], re.I):
             sec["blocks"] = tidy_dedication(sec["blocks"])
 

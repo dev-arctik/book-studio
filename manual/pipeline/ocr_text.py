@@ -65,6 +65,8 @@ def tidy_dedication(blocks: list) -> list:
         lines = b.get("lines") or []
         if b["type"] == "quote" and len(lines) >= 2 and sum(len(ln) for ln in lines) / len(lines) >= 35 and not all(ends_sentence(ln) for ln in lines):
             out.append({"type": "p", "text": join_lines("\n".join(lines))})
+        elif b["type"] == "blockquote":
+            out.append({"type": "centred", "lines": [b["text"]]})  # a dedication is centred, whatever the page called its block
         elif b["type"] == "centred" and out and out[-1]["type"] == "p" and not ends_sentence(out[-1]["text"]):
             glue = join_lines("\n".join(lines))
             out[-1] = {**out[-1], "text": out[-1]["text"] + " " + glue}
