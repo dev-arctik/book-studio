@@ -935,6 +935,10 @@ def main():
     if meta.get("strip_text"):
         blocks = [b for b in blocks if b.get("text") or b["label"] in ("Picture", "FullPage") or not b.get("label", "").endswith("Header")]
         blocks = [b for b in blocks if b.get("text", "x").strip() or b["label"] in ("Picture", "FullPage")]
+    # "join_lines_pages": pages whose blocks are printed with a line break after every line (a centred dedication) — set as running text
+    for b in blocks:
+        if b["page"] in meta.get("join_lines_pages", []) and b.get("text"):
+            b["text"] = re.sub(r"\s*\n\s*", " ", b["text"])
     # ṛ first, so hand-checked fixes can be written in the book's correct spelling ("Kṛṣṇa")
     fixes = restore_r_dot(blocks) if meta.get("restore_r_dot") else []
     fixes += apply_text_fixes(blocks, meta.get("text_fixes", []))
@@ -1032,6 +1036,13 @@ def main():
     if meta.get("drop_headings"):
         for s in sections:
             s.blocks = [b for b in s.blocks if not (b["type"] == "h" and re.sub(r"<[^>]+>", "", b.get("text", "")).strip() in meta["drop_headings"])]
+
+    # "right_lines": lines set right-aligned like a source (the name under a quoted passage, which the OCR read as a paragraph)
+    if meta.get("right_lines"):
+        for s in sections:
+            for b in s.blocks:
+                if b["type"] == "p" and plain(b.get("text", "")) in meta["right_lines"]:
+                    b["type"], b["text"] = "cite", plain(b["text"])
 
     # Indexes are matched (so the sections before them end in the right place) but left out: their page numbers would be wrong
     report_sections = sections
