@@ -55,6 +55,24 @@ def ends_sentence(text: str) -> bool:
     return plain(text).endswith(TERMINAL_PUNCT)
 
 
+def tidy_dedication(blocks: list) -> list:
+    """A dedication is printed centred, so its lines break where the page does — set it as running paragraphs again.
+    A multi-line quote of long lines ("This book is a humble offering to our beloved Srila / Prabhupada who…") becomes one paragraph; a centred
+    line that continues an unfinished paragraph ("…created a bond of love with / his disciples that is eternal.") is glued onto it.
+    Short poetic lines ("To Śrīla Prabhupāda, / Who empowers sincere souls") stay as they are."""
+    out = []
+    for b in blocks:
+        lines = b.get("lines") or []
+        if b["type"] == "quote" and len(lines) >= 2 and sum(len(ln) for ln in lines) / len(lines) >= 35 and not all(ends_sentence(ln) for ln in lines):
+            out.append({"type": "p", "text": join_lines("\n".join(lines))})
+        elif b["type"] == "centred" and out and out[-1]["type"] == "p" and not ends_sentence(out[-1]["text"]):
+            glue = join_lines("\n".join(lines))
+            out[-1] = {**out[-1], "text": out[-1]["text"] + " " + glue}
+        else:
+            out.append(b)
+    return out
+
+
 def add_paragraph(paragraphs: list, text: str) -> None:
     """Append a paragraph; one cut by a page break doesn't end in sentence punctuation, so the next piece is glued onto it."""
     text = join_lines(text)

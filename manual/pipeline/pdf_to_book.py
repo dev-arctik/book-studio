@@ -16,6 +16,7 @@ from collections import Counter
 import pymupdf
 
 import pdf_text
+from ocr_text import ends_sentence, join_lines, tidy_dedication  # noqa: F401
 from pdf_text import balaram_fonts, body_metrics, indent_band, page_lines, paragraphs, running_heads
 
 META_FILE = local_env.META_FILE
@@ -23,6 +24,7 @@ SKIP_SECTIONS = {"title page", "copyright", "contents", "table of contents"}  # 
 TABLE_SIZE = 0.7  # lines printed smaller than this × body size are table text (small caps opening a section are bigger)
 ROW_GAP = 10  # pt — table lines further apart than this start a new row (lines inside one cell sit ~7.5 pt apart)
 COLUMN_GAP = 20  # pt — line starts further apart than this belong to different columns
+PICTURE_TRIM = {}  # page -> lowest y (pt) a picture may reach, from "trim_pictures" in book_meta.json (a heading drawn over its bottom edge)
 PICTURE_SHARE = 0.05  # pictures smaller than this share of the page are icons (bullet check marks)
 BULLET_MIN_SIZE = 0  # pt — icons smaller than this (either side) are not bullets; book_meta.json "bullet_min_size" sets it per book
 
@@ -146,6 +148,7 @@ def page_items(page, body: float, margin: float) -> list[dict]:
         x0, y0, x1, y1 = b["bbox"]
         if b["type"] == 1 and (x1 - x0) * (y1 - y0) >= PICTURE_SHARE * w * h:
             # A picture drawn twice, a hair apart (a shadow or a mask beside it), is one picture
+            y1 = min(y1, PICTURE_TRIM.get(page.number + 1, y1))
             same = [o for o in items if "object" in o and o["object"]["type"] == "figure" and abs(o["object"]["bbox"][0] - x0) < 4 and abs(o["object"]["bbox"][1] - y0) < 4]
             if same:
                 continue
@@ -256,6 +259,7 @@ def convert(book: str) -> None:
     book = pdf_path.stem  # the key in output/ and book_meta.json, whether given as a path or a name
     pdf = pymupdf.open(pdf_path)
     meta = json.loads(META_FILE.read_text(encoding="utf-8")).get(book, {}) if META_FILE.is_file() else {}
+    PICTURE_TRIM.update({int(k): v for k, v in meta.get("trim_pictures", {}).items()})
     pdf_text.DROP_FONTS = tuple(meta.get("drop_fonts", []))  # decoration set in its own font (a faded mantra behind the text)
     global BULLET_MIN_SIZE
     BULLET_MIN_SIZE = meta.get("bullet_min_size", 0)
@@ -429,6 +433,8 @@ def convert(book: str) -> None:
     apply_fixes(sections, meta)
     for sec in sections:
         sec["blocks"] = join_cut_paragraphs(sec["blocks"])  # a fix may leave a paragraph cut mid-sentence
+        if re.search(r"dedicat", sec["title"], re.I):
+            sec["blocks"] = tidy_dedication(sec["blocks"])
 
     out_dir = local_env.stage_dir(book, "assembled")
     data = {"book": book, "layout": "prose", "sections": sections}

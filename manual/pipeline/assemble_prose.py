@@ -17,7 +17,7 @@ import re
 from dataclasses import dataclass, field, asdict
 
 from figures import is_illustration
-from ocr_text import PICTURE_LABELS, apply_text_fixes, ascii_key, blank_pages, clean_inline, drop_back_cover, ends_sentence, is_all_italic, join_lines, ocr_pages, plain
+from ocr_text import PICTURE_LABELS, apply_text_fixes, ascii_key, blank_pages, clean_inline, drop_back_cover, ends_sentence, is_all_italic, join_lines, ocr_pages, plain, tidy_dedication
 
 META_FILE = local_env.META_FILE
 MARGIN_LABELS = {"PageHeader", "PageFooter"}
@@ -492,6 +492,9 @@ def classify(text: str, label: str, prev: dict | None) -> list[dict]:
     return [{"type": "p", "text": join_lines(text)}]
 
 
+LABEL_START_RE = re.compile(r"<b>[^<]{3,60}:</b>")
+
+
 def unfinished(paragraph: dict) -> bool:
     """A paragraph a page break (or a picture) cut off: no closing punctuation, and not an all-capitals byline or label
     ("BY SRILA BHAKTISIDDHANTA SARASVATI PRABHUPADA"), which ends without a full stop."""
@@ -506,7 +509,8 @@ def add_block(section: Section, new: dict) -> None:
     last = section.blocks[-1] if section.blocks else None
     # A paragraph (or quotation) cut by a page break doesn't end in sentence punctuation — glue the next piece onto it
     # (a quotation only across a page: on one page, two quoted blocks are separate paragraphs as printed)
-    if new["type"] in ("p", "blockquote") and last and last["type"] == new["type"] and unfinished(last) and last.get("page") != new.get("page", -1):
+    # A paragraph opening with a bold label ("<b>In the mode of passion:</b> …") starts afresh, even after a line that ends in a colon
+    if new["type"] in ("p", "blockquote") and last and last["type"] == new["type"] and unfinished(last) and last.get("page") != new.get("page", -1) and not LABEL_START_RE.match(new["text"]):
         glue(last, new["text"])
         return
     # A photo in the middle of a paragraph: keep the paragraph whole and let the photo follow it
@@ -935,10 +939,6 @@ def main():
     if meta.get("strip_text"):
         blocks = [b for b in blocks if b.get("text") or b["label"] in ("Picture", "FullPage") or not b.get("label", "").endswith("Header")]
         blocks = [b for b in blocks if b.get("text", "x").strip() or b["label"] in ("Picture", "FullPage")]
-    # "join_lines_pages": pages whose blocks are printed with a line break after every line (a centred dedication) — set as running text
-    for b in blocks:
-        if b["page"] in meta.get("join_lines_pages", []) and b.get("text"):
-            b["text"] = re.sub(r"\s*\n\s*", " ", b["text"])
     # ṛ first, so hand-checked fixes can be written in the book's correct spelling ("Kṛṣṇa")
     fixes = restore_r_dot(blocks) if meta.get("restore_r_dot") else []
     fixes += apply_text_fixes(blocks, meta.get("text_fixes", []))
@@ -1037,6 +1037,9 @@ def main():
         for s in sections:
             s.blocks = [b for b in s.blocks if not (b["type"] == "h" and re.sub(r"<[^>]+>", "", b.get("text", "")).strip() in meta["drop_headings"])]
 
+    for s in sections:
+        if re.search(r"dedicat", s.title, re.I):
+            s.blocks = tidy_dedication(s.blocks)
     # "right_lines": lines set right-aligned like a source (the name under a quoted passage, which the OCR read as a paragraph)
     if meta.get("right_lines"):
         for s in sections:
