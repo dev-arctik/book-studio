@@ -166,10 +166,45 @@ def capital_openings(sections: list) -> None:
                 b["text"] = sentence_case(plain(m.group(1)).strip(), proper) + " " + m.group(2)
 
 
+def title_echo_and_splits(sec: dict) -> list:
+    """The section's own title printed again as centred bold lines at its top is dropped (the template prints the title); a paragraph cut in two blocks
+    (its first line sat at another indent, so it came out as an inset block) is joined again."""
+    blocks = sec["blocks"]
+    norm = lambda s: re.sub(r"\W", "", plain(s)).lower()  # noqa: E731
+    first = blocks[0] if blocks else None
+    echoed = first and (" ".join(first["lines"]) if first["type"] == "centred" else first.get("text", "") if first["type"] == "h" else None)
+    if echoed and norm(echoed) == norm(sec["title"]):
+        blocks = blocks[1:]
+    out = []
+    for b in blocks:
+        prev = out[-1] if out else None
+        if prev and prev["type"] in ("blockquote", "p") and b["type"] in ("p", "blockquote") and not ends_sentence(prev["text"]) and plain(b["text"])[:1].islower():
+            out[-1] = {"type": "p", "text": prev["text"] + " " + b["text"]}
+        else:
+            out.append(b)
+    return out
+
+
+def dated_headings(blocks: list) -> list:
+    """A centred block of bold lines that opens with a year ("1966 October—November / New York City …") is one heading; a lone short line set as a verse
+    ("Joan Suval", the name of the person speaking) is a bold centred line of its own (not a contents topic)."""
+    out = []
+    for b in blocks:
+        lines = b.get("lines") or []
+        if b["type"] == "centred" and lines and all(ln.strip().startswith("<b>") for ln in lines) and re.match(r"<b>\s*\d{4}", lines[0].strip()):
+            out.append({"type": "h", "text": " — ".join(plain(ln).strip() for ln in lines)})
+        elif b["type"] == "quote" and len(lines) == 1 and len(lines[0]) < 40 and not lines[0].rstrip().endswith((".", "!", "?", ",", ":")):
+            out.append({"type": "centred", "lines": [f"<b>{plain(lines[0]).strip()}</b>"]})
+        else:
+            out.append(b)
+    return out
+
+
 def tidy_sections(sections: list, meta: dict) -> None:
     for sec in sections:
-        blocks = centred_run_on(sec["blocks"])
+        blocks = centred_run_on(title_echo_and_splits(sec))
         blocks = verses_and_translations(blocks)
+        blocks = dated_headings(blocks) if meta.get("dated_headings") else blocks
         blocks = subheadings(blocks)
         blocks = glue_headings(blocks, meta.get("glue_headings", []))
         blocks = signatures(blocks)

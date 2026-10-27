@@ -85,7 +85,7 @@ def page_items(page, body: float, margin: float) -> list[dict]:
     # A decorated initial ("W" set large) belongs at the start of the line beside it ("HEN I FIRST JOINED…"); that first line,
     # set in small capitals, is body text
     for drop in [l for l in lines if len(l["text"]) == 1 and l["size"] >= 2 * body]:
-        beside = [l for l in lines if l is not drop and l["x0"] > drop["x0"] and abs(l["y"] - drop["y"]) < max(3, 0.5 * drop["size"])]  # a tall cap starts above its line
+        beside = [l for l in lines if l is not drop and l["x0"] > drop["x0"] and abs(l["y"] - drop["y"]) < max(3, 0.5 * drop["size"]) and l["y"] >= drop["y"] - 3]  # a tall cap starts above its line; a title above the cap is not that line
         if beside:
             beside[0]["spans"][0] = {**beside[0]["spans"][0], "text": drop["text"] + beside[0]["spans"][0]["text"]}
             beside[0]["text"] = drop["text"] + beside[0]["text"]

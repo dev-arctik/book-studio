@@ -286,7 +286,7 @@ def build_typst_data(book: str, build_dir: Path) -> dict:
     cover_path = build_dir / "cover.jpg"
     cover.save(cover_path, quality=85, optimize=True)
     cover_data = {"path": typst_path(cover_path), "aspect": cover.height / cover.width}
-    frontispiece = front_figures(book, first_text_page(book, assembled), figures, set(meta.get("frontispiece_skip", [])))
+    frontispiece = front_figures(book, meta.get("frontispiece_until") or first_text_page(book, assembled), figures, set(meta.get("frontispiece_skip", [])))  # "frontispiece_until": a page whose picture belongs before the contents although its text is a section (a dedication)
     front, chapters = (from_prose_book if meta["layout"] == "prose" else from_verses_book)(assembled, figures)
     mark_headings(front, chapters, not meta.get("no_topics", False))
     copyright_lines = copyright_page(book, first_text_page(book, assembled), meta.get("strip_text", []), meta.get("copyright_page")) if meta.get("keep_copyright") else None

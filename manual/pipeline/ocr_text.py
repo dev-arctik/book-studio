@@ -62,13 +62,14 @@ def tidy_dedication(blocks: list) -> list:
     Short poetic lines ("To Śrīla Prabhupāda, / Who empowers sincere souls") stay as they are."""
     out = []
     for b in blocks:
-        lines = b.get("lines") or []
-        if b["type"] == "quote" and len(lines) >= 2 and sum(len(ln) for ln in lines) / len(lines) >= 35 and not all(ends_sentence(ln) for ln in lines):
-            out.append({"type": "p", "text": join_lines("\n".join(lines))})
-        elif b["type"] == "blockquote":
+        lines = [ln for ln in (b.get("lines") or []) if ln.strip()]
+        long_lines = lines and sum(len(ln) for ln in lines) / len(lines) >= 35
+        if b["type"] == "quote" and long_lines and (len(lines) >= 2 and not all(ends_sentence(ln) for ln in lines) or not ends_sentence(lines[-1])):
+            b = {"type": "p", "text": join_lines("\n".join(lines))}
+        if b["type"] == "blockquote":
             out.append({"type": "centred", "lines": [b["text"]]})  # a dedication is centred, whatever the page called its block
-        elif b["type"] == "centred" and out and out[-1]["type"] == "p" and not ends_sentence(out[-1]["text"]):
-            glue = join_lines("\n".join(lines))
+        elif b["type"] in ("centred", "p") and out and out[-1]["type"] == "p" and not ends_sentence(out[-1]["text"]):
+            glue = b["text"] if b["type"] == "p" else join_lines("\n".join(lines))
             out[-1] = {**out[-1], "text": out[-1]["text"] + " " + glue}
         else:
             out.append(b)
