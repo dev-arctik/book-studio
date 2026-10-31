@@ -1,7 +1,7 @@
 # manual/pipeline/progress.py
 # A read-only progress view of the whole batch: for every book its stage (read, assembled, drafts built, published), the pages read
 # with speed and time left while the OCR runs, and whether the page reader is working. It changes nothing; --watch refreshes it (every 120 s unless a number of seconds follows).
-# Usage: poetry run python manual/pipeline/progress.py --library <path/to/book-library> --inputs <folder with the scans> [--watch [seconds]]
+# Usage: poetry run python manual/pipeline/progress.py --library <path/to/book-library> --inputs <folder> [<folder> ...] [--watch [seconds]]  (a folder is a path or just its name inside the library, e.g. --inputs "Group 3" "Group 4": one block per folder)
 
 import sys; sys.dont_write_bytecode = True  # keep pipeline/ free of __pycache__ clutter
 import local_env
@@ -192,38 +192,54 @@ def book_line(key: str, total: int | None, working: bool, rest_left: float | Non
     return "queued", 0
 
 
-def render() -> str:
-    meta = json.loads(local_env.META_FILE.read_text(encoding="utf-8")) if local_env.META_FILE.is_file() else {}
-    # --inputs may be given several times (one per batch folder); --only "a|b|c" keeps the books whose name holds one of the words, in that order
-    REDO.extend(w.strip().lower() for w in (option("--redo") or "").split("|") if w.strip())
-    folders = [Path(x).expanduser().resolve() for x in values("--inputs")]
-    scans = {p.stem: p for f in folders if f.is_dir() for p in sorted(f.glob("*.pdf"))}
-    inputs = {k: v.parent for k, v in scans.items()}  # each book's own batch folder: its finished files are looked for there
-    totals = {key: pdf_pages(path) for key, path in scans.items()}
-    batch_keys = set(scans) if scans else set(meta)  # given batch folders, only their books (the library's settings cover every batch)
-    keys = sorted(batch_keys, key=lambda k: (totals.get(k) is None, totals.get(k) or 0, k))  # smallest first
-    if only := option("--only"):
-        words = [w.strip().lower() for w in only.split("|") if w.strip()]
-        keys = [k for w in words for k in keys if w in k.lower()]
-        keys = list(dict.fromkeys(keys))  # the run's own order
-    working = reader_running()
-    mode, rest_left = cooldown_mode(working)
-    battery = power.battery()
-    power_text = "no battery info" if battery is None else f"{battery[0]}% {'plugged in' if battery[1] else 'ON BATTERY'}"
+def folder_arg(value: str) -> Path:
+    """A batch folder given as a path, or just its name ("Group 3") — a bare name is looked for in the library."""
+    path = Path(value).expanduser()
+    return (path if path.is_dir() or path.is_absolute() else local_env.PROJECT_ROOT / value).resolve()
+
+
+def table(keys: list[str], totals: dict, inputs: dict, working: bool, rest_left: float | None) -> list[str]:
+    """The summary line and the book rows of one group of books."""
     rows, read, all_pages, published = [], 0, 0, 0
     for n, key in enumerate(keys, 1):
-        status, got = book_line(key, totals.get(key), working, rest_left, inputs.get(key) if isinstance(inputs, dict) else inputs)
+        status, got = book_line(key, totals.get(key), working, rest_left, inputs.get(key))
         published += status.startswith("DONE")
         read += got
         all_pages += totals.get(key) or 0
         rows.append(f"{n:>2}  {key[:44]:<44} {totals.get(key, '?'):>4}  {status}")
-    bar = "█" * (20 * published // max(len(keys), 1)) + "░" * (20 - 20 * published // max(len(keys), 1))
-    head = [f"Book progress — {datetime.now():%Y-%m-%d %H:%M:%S}   |   power: {power_text}",
-            f"MODE: {mode}",
-            f"TEMPS: {temperatures()}",
-            f"Published {published} of {len(keys)} books  [{bar}]   pages covered {read} of {all_pages}", "",
-            f"{'#':>2}  {'book':<44} {'pages':>4}  status", "-" * 110]
-    return "\n".join(head + rows)
+    filled = 20 * published // max(len(keys), 1)
+    return [f"Published {published} of {len(keys)} books  [{'█' * filled}{'░' * (20 - filled)}]   pages covered {read} of {all_pages}", "",
+            f"{'#':>2}  {'book':<44} {'pages':>4}  status", "-" * 110, *rows]
+
+
+def render() -> str:
+    meta = json.loads(local_env.META_FILE.read_text(encoding="utf-8")) if local_env.META_FILE.is_file() else {}
+    # --inputs takes one or more batch folders (a path or just the name, "--inputs "Group 3" "Group 4"" or repeated): each gets its own block under a line of ====;
+    # --only "a|b|c" keeps the books whose name holds one of the words, in that order
+    REDO.extend(w.strip().lower() for w in (option("--redo") or "").split("|") if w.strip())
+    names = values("--inputs")
+    if "--inputs" in sys.argv:  # several folders after one --inputs
+        i = sys.argv.index("--inputs") + 1
+        while i < len(sys.argv) and not sys.argv[i].startswith("--"):
+            names.append(sys.argv[i])
+            i += 1
+    folders = list(dict.fromkeys(folder_arg(x) for x in names))
+    scans = {p.stem: p for f in folders if f.is_dir() for p in sorted(f.glob("*.pdf"))}
+    inputs = {k: v.parent for k, v in scans.items()}  # each book's own batch folder: its finished files are looked for there
+    totals = {key: pdf_pages(path) for key, path in scans.items()}
+    smallest_first = lambda ks: sorted(ks, key=lambda k: (totals.get(k) is None, totals.get(k) or 0, k))  # noqa: E731
+    groups = [(f.name, smallest_first(p.stem for p in f.glob("*.pdf"))) for f in folders if f.is_dir()] or [("", smallest_first(meta))]  # no folder given: every book in the settings
+    if only := option("--only"):
+        words = [w.strip().lower() for w in only.split("|") if w.strip()]
+        groups = [(name, list(dict.fromkeys(k for w in words for k in keys if w in k.lower()))) for name, keys in groups]  # the run's own order
+    working = reader_running()
+    mode, rest_left = cooldown_mode(working)
+    battery = power.battery()
+    power_text = "no battery info" if battery is None else f"{battery[0]}% {'plugged in' if battery[1] else 'ON BATTERY'}"
+    out = [f"Book progress — {datetime.now():%Y-%m-%d %H:%M:%S}   |   power: {power_text}", f"MODE: {mode}", f"TEMPS: {temperatures()}"]
+    for name, keys in groups:
+        out += ["", f"=============================== {name} ===============================" if name else "", *table(keys, totals, inputs, working, rest_left)]
+    return "\n".join(out)
 
 
 def main() -> None:

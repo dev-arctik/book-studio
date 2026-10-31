@@ -476,6 +476,9 @@ def classify(text: str, label: str, prev: dict | None) -> list[dict]:
         return [{"type": "sign", "text": p.lstrip("—– ").strip()}]
     if prev and prev["type"] == "sign" and len(p) < 200 and "\n" not in p:
         return [{"type": "sign-detail", "text": p}]  # place/date line under a signature
+    # An italic "Texts 1–7: …" line (the overview books' subheadings, set in italics, sometimes over two lines) is a heading, not a verse or a source
+    if is_all_italic(text) and re.match(r"^Texts?\b[:\s]*\d", p) and len(p) < 200:
+        return [{"type": "h", "text": " ".join(plain(ln) for ln in lines)}]
     # Verses are printed in italics, one line per pāda
     if is_all_italic(text) and len(lines) >= 2:
         return [{"type": "quote", "lines": [plain(ln) for ln in lines]}]
@@ -592,7 +595,10 @@ def assemble(blocks, contents, unnumbered: set, dropped: set, front_prefixes: tu
     for i, blk in enumerate(blocks):
         if blk["label"] == "Footnote" and blk["page"] in opts.get("text_pages", ()):  # a dialogue the reader tagged as footnotes
             blk = {**blk, "label": "Text"}
-        if extra and blk["page"] >= extra[0]["page"]:
+        # an inserted section opens at its page's first block, or, with "at" (a regex), at the heading on that page that matches it (a chapter that starts mid-page)
+        if extra and blk["page"] >= extra[0]["page"] and (
+                not extra[0].get("at") or blk["page"] > extra[0]["page"]
+                or (blk["label"] == "SectionHeader" and re.search(extra[0]["at"], plain(blk.get("text", ""))))):
             sections.append(Section(kind=extra[0].get("kind", "back"), title=extra[0]["title"], subtitle=extra[0].get("subtitle", ""), start_page=blk["page"]))
             extra = extra[1:]
         if skip:
@@ -930,7 +936,7 @@ def main():
     blocks = reorder_pages(blocks, set(meta.get("skip_pages", [])), meta.get("page_moves", []))
     # "drop_pictures": pages whose picture is decoration (a framed ornament with the chapter's name inside it) — the text stays
     drop_pictures = set(meta.get("drop_pictures", []))
-    blocks = [b for b in blocks if not (b["page"] in drop_pictures and b["label"] in PICTURE_LABELS)]
+    blocks = [b for b in blocks if not (b["page"] in drop_pictures and (b["label"] in PICTURE_LABELS or b["label"] == "FullPage"))]  # a page the reader took for one big picture counts too
     # "strip_text": regexes removed from every block (a scanner's watermark line printed on each page); a block left empty goes
     for rx in meta.get("strip_text", []):
         for b in blocks:
@@ -1032,6 +1038,11 @@ def main():
     for s in sections:
         if s.title in meta.get("part_sections", {}):
             s.kind, s.subtitle = "part", meta["part_sections"][s.title]
+    # With mid-page chapter starts ("at") a part's page also holds the dialogue's title lines before the first chapter; its own title page says it
+    if any(x.get("at") for x in inserted):
+        for s in sections:
+            if s.kind == "part":
+                s.blocks = [b for b in s.blocks if b["type"] == "figure"]
     # "drop_headings": headings left out by hand (a "Contents" title whose list was read separately and left behind as a lone heading)
     if meta.get("drop_headings"):
         for s in sections:

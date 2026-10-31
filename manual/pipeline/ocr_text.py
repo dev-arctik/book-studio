@@ -87,7 +87,8 @@ def add_paragraph(paragraphs: list, text: str) -> None:
 
 def ocr_pages(book: str):
     """Yield (page number, blocks in reading order) for every OCR'd page of a book."""
-    for path in sorted(local_env.stage_dir(book, "ocr").glob("page-*.json")):
+    # sort by page number, not by name: page-1000 would otherwise land between page-100 and page-101 in a book over 999 pages
+    for path in sorted(local_env.stage_dir(book, "ocr").glob("page-*.json"), key=lambda p: int(p.stem.split("-")[1])):
         data = json.loads(path.read_text(encoding="utf-8"))
         for b in data["blocks"]:
             b["image_bbox"] = data["image_bbox"]  # page size in the OCR render's pixels — needed to crop pictures later
