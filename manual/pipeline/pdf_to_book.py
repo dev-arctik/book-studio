@@ -463,6 +463,14 @@ def convert(book: str) -> None:
     apply_fixes(sections, meta)
     for sec in sections:
         sec["blocks"] = join_cut_paragraphs(sec["blocks"])  # a fix may leave a paragraph cut mid-sentence
+    for sec in sections:  # a list the PDF stores as one paragraph ("Specifics: • one … • two …"): every bullet is its own paragraph
+        listed = []
+        for blk in sec["blocks"]:
+            if blk["type"] == "p" and len(re.findall(r"(?:^|\s)•\s", blk["text"])) >= 2:
+                listed += [{**blk, "text": part.strip()} for part in re.split(r"\s+(?=•\s)", blk["text"]) if part.strip()]
+            else:
+                listed.append(blk)
+        sec["blocks"] = listed
     if meta.get("tidy"):  # "tidy": true — verses, translations, subheadings, signatures, capital openings, breaks (book_tidy.py)
         tidy_sections(sections, meta)
     for sec in sections:

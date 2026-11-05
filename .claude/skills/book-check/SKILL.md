@@ -97,3 +97,7 @@ Format: date — book — what looked wrong — how it was found — fix (meta k
 - 2026-11-05 — My Letters vols. 2/3 — letters merged with commentary, date line lost — read the first page of a month — `letters` setting; make sure the date line survives.
 - 2026-11-05 — all Group 5 — a chapter that starts mid-page carried the previous chapter's tail — read the first lines under each chapter title — automatic heading match in `assemble_prose`.
 - 2026-11-05 — Begging, Obstacles, Vaiṣṇava Compassion — glossaries and acknowledgement lists as one paragraph — read the glossary page — `entry_pages`, `list_pages`, entry-aware gluing.
+- 2026-11-06 — Death (BPS) — rebuilt without its split copy: half the book was empty headings — word count of the published PDF against the old one (`cmpwords`) and against the scan; ALWAYS compare word counts before and after a rebuild. Books made from `_split` are rebuilt by path.
+- 2026-11-06 — Vaiṣṇava-nindā — Parts held the book's text and a new rule emptied them (−33 % of the words) — same word-count comparison.
+- 2026-11-06 — all books with a right-aligned cite/signature — the paragraph after it was set small and grey over it — render a page with a cite; sign-detail only for short place/date lines.
+- 2026-11-06 — contents of every book — Foreword/Preface/Introduction were missing from contents and bookmarks — now listed by the template.

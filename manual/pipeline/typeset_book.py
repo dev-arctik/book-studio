@@ -143,7 +143,7 @@ def mark_headings(front: list[dict], chapters: list[dict], topics: bool = True, 
             label = bool(LABEL_HEADING_RE.match(text))
             if label or (text.isupper() and len(text) < 60):
                 b["centre"] = True
-            if topics and not label and 2 < len(text) <= 120 and not text.endswith((",", ";")) and not text.startswith(("“", "‘", "\"", "—", "–")) and not restates(text, ch["title"] + " " + (ch.get("subtitle") or "")) and not re.search(r"\(Popup|^\d+ \(|^(Chapter|Section|Part) [\w-]+$", text) and not (len(text) > 50 and ": " in text) and (counts[text] <= 2 if not text.isupper() else counts[text] == 1 and not re.search(r"\d", text)):
+            if topics and not label and 2 < len(text) <= 120 and not text.endswith((",", ";")) and not text.startswith(("“", "‘", "\"", "—", "–")) and not text[:1].islower() and not restates(text, ch["title"] + " " + (ch.get("subtitle") or "")) and not re.search(r"\(Popup|^\d+ \(|^(Chapter|Section|Part) [\w-]+$", text) and not (len(text) > 50 and ": " in text) and (counts[text] <= 2 if not text.isupper() else counts[text] == 1 and not re.search(r"\d", text)):
                 b["id"] = f"sub-{ci}-{k}"  # the template labels it, so the contents can link to it and show its page
                 k += 1
 
@@ -241,7 +241,7 @@ def from_prose_book(assembled: dict, figures: FigureCropper) -> tuple[list, list
             continue
         n += s["kind"] == "chapter"
         # A title that already starts with its own number ("23: The Song of…") keeps it: a running count above it would disagree (Parts restart at 1)
-        own_number = re.match(r"^\d+\s*[:.]\s", s["title"])
+        own_number = re.match(r"^(?:\d+\s*[:.]\s|Chapter [\w-]+\b)", s["title"], re.I)  # "23: …", or "Chapter One: …" (the title is the label)
         chapters.append({"number": n if s["kind"] == "chapter" and not own_number else None, "part": s["kind"] == "part", "title": s["title"], "subtitle": "" if s["subtitle"] and (ascii_key(s["title"]).startswith(ascii_key(s["subtitle"])[:30]) or re.fullmatch(r"Chapter [A-Za-z-]+", s["subtitle"].strip())) else s["subtitle"],
                          "cover": figures.place(s["cover"]) if s.get("cover") else None,
                          "blocks": prose_blocks(s["blocks"], figures), "verses": []})

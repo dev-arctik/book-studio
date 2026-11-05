@@ -13,7 +13,8 @@ import local_env
 # Look-alike letters that never occur in IAST transliteration, so they are always OCR confusions (seen: "nîcair", "Nişkramati",
 # "○ debauchee" for the vocative O, "VIṢŅU" with a cedilla N). Not ü: it is real in names (Müller, Krüger).
 NON_IAST_FIXES = str.maketrans({"î": "ī", "â": "ā", "û": "ū", "Î": "Ī", "Â": "Ā", "Û": "Ū", "ş": "ṣ", "Ş": "Ṣ", "ţ": "ṭ", "Ţ": "Ṭ", "○": "O",
-                                "ņ": "ṇ", "Ņ": "Ṇ"})
+                                "ņ": "ṇ", "Ņ": "Ṇ",
+                                "ș": "ṣ", "Ș": "Ṣ", "ă": "ā", "Ă": "Ā", "ț": "ṭ", "Ț": "Ṭ", "Ŗ": "Ṛ", "ŗ": "ṛ", "Ń": "Ṅ", "ń": "ṅ", "Ä": "Ā", "ä": "ā"})  # Romanian / Latin-Extended look-alikes of IAST letters
 # Characters the book font lacks: decorative list bullets (♦ ► ▪ ➤ □ …) become the standard bullet •
 BULLET_FIXES = str.maketrans({**{c: "•" for c in "♦►▪➤●■◆▸▶➢✓✔□⇒"}, "′": "'", "ˇ": ""})  # also: prime → apostrophe, stray caron speck removed
 TERMINAL_PUNCT = tuple('.!?"”’\')')
@@ -31,6 +32,9 @@ def clean_inline(html: str) -> str:
     html = html.replace("r̥", "ṛ").replace("R̥", "Ṛ")  # the reader sometimes puts a combining ring below instead of the dot (Kr̥ṣṇa, kr̥pā)
     html = re.sub(r"\b(K)r(ṣṇ)", r"\1ṛ\2", html)  # Krṣṇa / Krṣṇadāsa: the dot sits under the r in every IAST spelling
     html = re.sub(r"\b(V)r(ṇd)", r"\1ṛ\2", html)  # Vrṇdāvana
+    html = re.sub(r"\b(K)rṣna", r"\1ṛṣṇa", html)  # Krṣna (a plain n as well)
+    html = re.sub(r"\b(V)ṛṇd", r"\1ṛnd", html)  # Vṛṇdāvana: the dot belongs under the r, the n is plain
+    html = re.sub(r"\bSrīla", "Śrīla", html)
     html = re.sub(r"\bŚri(?=\w)", "Śrī", html)  # the reader drops the macron of Śrīla / Śrīmad / Śrīdhara (hundreds per book); no Sanskrit word begins "Śri" + letter
     html = re.sub(r"\bŚri\b", "Śrī", html)
     html = re.sub(r"(?<=[^\s>])\s*<(?:ol|ul)\b[^>]*>", "\n", html, flags=re.I)  # a list nested inside an item's text: its items are lines too

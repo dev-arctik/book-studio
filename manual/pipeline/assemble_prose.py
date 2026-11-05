@@ -102,7 +102,7 @@ def facsimile(page_no: int, page_blocks) -> list[dict]:
     caption = texts[-1] if texts else None
     body = [b for b in content if b is not caption]
     bbox = [min(b["bbox"][0] for b in body), min(b["bbox"][1] for b in body), max(b["bbox"][2] for b in body), max(b["bbox"][3] for b in body)]
-    out = [{"page": page_no, "label": "Picture", "text": "", "bbox": bbox, "image_bbox": content[0]["image_bbox"]}]
+    out = [{"page": page_no, "label": "Picture", "text": "", "bbox": bbox, "image_bbox": content[0]["image_bbox"], "wide": True}]  # a document or chart page: full text width, small print stays readable
     if caption:
         out.append({"page": page_no, "label": "Caption", "text": clean_inline(caption["html"]), "html": "", "shape": "", "rule": False})
     return out
@@ -578,6 +578,10 @@ def classify(text: str, label: str, prev: dict | None) -> list[dict]:
     """Turn one OCR block into typed blocks. A verse with its source on the last line ("…\n[CC Ādi-līlā 1.5]") becomes quote + cite."""
     p = plain(text)
     lines = [ln for ln in text.split("\n") if plain(ln)]
+    if len(lines) == 1 and re.match(r"^Chapter [A-Za-z-]+: .{3,140}[^.]$", p):  # "Chapter Four: The Appearance of Śrī Nārada" read as body text: a heading
+        return [{"type": "h", "text": p}]
+    if len(lines) >= 2 and re.match(r"^Chapter [A-Za-z-]+: .{3,140}[^.]$", plain(lines[0])):  # the same line with its "Texts 1–13: …" line below it in one block
+        return [{"type": "h", "text": plain(lines[0])}] + classify("\n".join(lines[1:]), label, prev)
     if SCENE_BREAK_RE.match(p):
         return [{"type": "break"}]
     if ORNAMENT_RE.match(p):
@@ -589,7 +593,7 @@ def classify(text: str, label: str, prev: dict | None) -> list[dict]:
         return [{"type": "cite", "text": p}]
     if p.startswith(("—", "–")) and len(p) < 80:
         return [{"type": "sign", "text": p.lstrip("—– ").strip()}]
-    if prev and prev["type"] == "sign" and len(p) < 200 and "\n" not in p:
+    if prev and prev["type"] == "sign" and label != "SectionHeader" and len(p) < 70 and not p.endswith((".", "?", "!")) and "\n" not in p:
         return [{"type": "sign-detail", "text": p}]  # place/date line under a signature
     # An italic "Texts 1–7: …" line (the overview books' subheadings, set in italics, sometimes over two lines) is a heading, not a verse or a source
     if is_all_italic(text) and re.match(r"^Texts?\b[:\s]*\d", p) and len(p) < 200:

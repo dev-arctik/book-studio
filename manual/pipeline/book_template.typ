@@ -81,7 +81,7 @@
   } else if b.type == "sign" {
     block(width: 100%, above: 0.9em, below: 0.2em, align(right, text(style: "italic")[— #rich(b.segs)]))
   } else if b.type == "sign-detail" {
-    align(right, text(size: 9pt, fill: soft, rich(b.segs)))
+    block(width: 100%, above: 0.4em, below: 0.9em, align(right, text(size: 9pt, fill: soft, rich(b.segs))))
   } else if b.type == "figure" {
     // Size from the picture's shape: tall Deity photos capped by height, wide temple drawings by width
     block(width: 100%, breakable: false, above: 1.3em, below: 1.3em, align(center, {
@@ -147,6 +147,7 @@
   let paintings = ch.blocks.filter(b => b.type == "figure")
   v(if paintings.len() > 0 { 12mm } else { 55mm })
   align(center)[
+    #set par(justify: false)
     #text(size: 10pt, fill: soft, tracking: 0.25em, upper(ch.subtitle))
     #v(0.8em)
     #heading(level: 1, outlined: true, text(size: 24pt, style: "italic", fill: accent, weight: "regular", hyphenate: false, ch.title)) #label("ch-" + str(i))
