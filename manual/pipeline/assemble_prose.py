@@ -751,6 +751,14 @@ def assemble(blocks, contents, unnumbered: set, dropped: set, front_prefixes: tu
         if blk["label"] == "Text" and blk["page"] in opts.get("list_pages", ()):  # a list of titles: one item per block, never glued
             add_block(current, {"type": "entry", "text": join_lines(blk["text"]), "page": blk["page"]})
             continue
+        if blk["label"] == "Text" and blk["page"] in opts.get("centred_pages", ()):  # a page printed all centred (a litany of names with their meanings): every block is its own centred group
+            add_block(current, {"type": "quote", "lines": [plain(ln) for ln in blk["text"].split("\n") if plain(ln)]})
+            continue
+        if blk["label"] == "Text" and blk["page"] in opts.get("verse_pages", ()):  # mantra verses in roman type: a block of three or more short lines is a verse, the rest stays prose
+            vlines = [ln for ln in blk["text"].split("\n") if plain(ln)]
+            if len(vlines) >= 3 and all(len(plain(ln)) < 50 for ln in vlines):
+                add_block(current, {"type": "quote", "lines": [plain(ln) for ln in vlines]})
+                continue
         if blk["label"] == "Text" and blk["shape"] == "right":  # a signature block: the name, then its place and date lines
             for n, line in enumerate(ln for ln in blk["text"].split("\n") if plain(ln)):
                 add_block(current, {"type": "sign" if n == 0 else "sign-detail", "text": plain(line)})
@@ -967,7 +975,8 @@ def main():
     inserted = meta.get("insert_sections", [])
     opts = {"ocr_tables": meta.get("ocr_tables", False), "gallery": {x["title"] for x in inserted if x.get("gallery")},
             "list_pages": set(meta.get("list_pages", [])),  # pages whose short lines are list items (a list of titles)
-            "text_pages": set(meta.get("text_pages", []))}  # pages whose footnote-tagged blocks are really body text (a dialogue)
+            "text_pages": set(meta.get("text_pages", [])),
+            "centred_pages": set(meta.get("centred_pages", [])), "verse_pages": set(meta.get("verse_pages", []))}  # pages whose footnote-tagged blocks are really body text (a dialogue)
 
     def attempt(cont, op, ins, bl=None):
         return assemble(blocks if bl is None else bl, cont, unnumbered, dropped, front_prefixes, academic, italic_prose, ins, op)
