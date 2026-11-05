@@ -100,10 +100,15 @@ def repeats_title(heading: str, title: str) -> bool:
 def restates(heading: str, title: str) -> bool:
     """A heading that only restates the chapter title ("The Story of Vatsasura" in the chapter Vatsasura) is no topic of its own."""
     h, t = ascii_key(heading), ascii_key(title)
-    return len(t) >= 6 and t in h and len(h) <= len(t) + 16
+    return (len(t) >= 6 and t in h and len(h) <= len(t) + 16) or (len(h) >= 8 and h in t)
 
 
-def mark_headings(front: list[dict], chapters: list[dict], topics: bool = True) -> None:
+def near_copy(a: str, b: str) -> bool:
+    """Two heading keys that are one heading read twice: nearly the same letters and about the same length."""
+    return min(len(a), len(b)) >= 0.7 * max(len(a), len(b)) and difflib.SequenceMatcher(None, a, b).ratio() >= 0.78
+
+
+def mark_headings(front: list[dict], chapters: list[dict], topics: bool = True, merge_similar: bool = False) -> None:
     """Subheadings: label-like or all-capitals ones are centred; every other (unique) one is a subtopic that the contents lists under
     its chapter, with its page — so the contents shows the chapter names and the topics inside each chapter.
     topics=False ("no_topics" in book_meta.json): the headings are screenplay cues or labels, so none is listed in the contents."""
@@ -116,7 +121,19 @@ def mark_headings(front: list[dict], chapters: list[dict], topics: bool = True) 
                 b["centre"] = True
     for sec in front + chapters:  # a page's printed running title or banner repeats the section title as a heading in its first blocks: it is not a topic
         key = ascii_key(sec["title"])
-        sec["blocks"] = [b for i, b in enumerate(sec["blocks"]) if not (i < 4 and b["type"] == "h" and key and repeats_title(ascii_key(plain(b)), key))]
+        sec["blocks"] = [b for i, b in enumerate(sec["blocks"]) if not (i < 4 and b["type"] == "h" and key and repeats_title(ascii_key(plain(b)), key))
+                         and not (i < 3 and b["type"] in ("h", "p") and re.fullmatch(r"Chapter [A-Za-z-]+", plain_text(b["segs"]) if b["type"] == "h" else re.sub(r"<[^>]+>", "", b.get("text", "")).strip()))]
+    if merge_similar:  # "merge_similar_headings": the reader returned some headings twice, once misread ("SRI AITANYAMATHA" after "ŚRĪ CAITANYA MAṭHA"): the later near-copy goes
+        for ch in chapters:
+            seen, kept = [], []
+            for b in ch["blocks"]:
+                if b["type"] == "h":
+                    key = ascii_key(plain(b)).replace("practicalguide", "")
+                    if any(near_copy(key, old) for old in seen[-2:]):
+                        continue
+                    seen.append(key)
+                kept.append(b)
+            ch["blocks"] = kept
     for ci, ch in enumerate(chapters):
         k = 0
         for b in ch["blocks"]:
@@ -126,7 +143,7 @@ def mark_headings(front: list[dict], chapters: list[dict], topics: bool = True) 
             label = bool(LABEL_HEADING_RE.match(text))
             if label or (text.isupper() and len(text) < 60):
                 b["centre"] = True
-            if topics and not label and 2 < len(text) <= 120 and not text.endswith((",", ";")) and not text.startswith(("“", "‘", "\"")) and not restates(text, ch["title"]) and not re.search(r"\(Popup|^\d+ \(", text) and not (len(text) > 50 and ": " in text) and (counts[text] <= 2 if not text.isupper() else counts[text] == 1 and not re.search(r"\d", text)):
+            if topics and not label and 2 < len(text) <= 120 and not text.endswith((",", ";")) and not text.startswith(("“", "‘", "\"")) and not restates(text, ch["title"] + " " + (ch.get("subtitle") or "")) and not re.search(r"\(Popup|^\d+ \(|^(Chapter|Section|Part) [\w-]+$", text) and not (len(text) > 50 and ": " in text) and (counts[text] <= 2 if not text.isupper() else counts[text] == 1 and not re.search(r"\d", text)):
                 b["id"] = f"sub-{ci}-{k}"  # the template labels it, so the contents can link to it and show its page
                 k += 1
 
@@ -225,7 +242,7 @@ def from_prose_book(assembled: dict, figures: FigureCropper) -> tuple[list, list
         n += s["kind"] == "chapter"
         # A title that already starts with its own number ("23: The Song of…") keeps it: a running count above it would disagree (Parts restart at 1)
         own_number = re.match(r"^\d+\s*[:.]\s", s["title"])
-        chapters.append({"number": n if s["kind"] == "chapter" and not own_number else None, "part": s["kind"] == "part", "title": s["title"], "subtitle": "" if s["subtitle"] and ascii_key(s["title"]).startswith(ascii_key(s["subtitle"])[:30]) else s["subtitle"],
+        chapters.append({"number": n if s["kind"] == "chapter" and not own_number else None, "part": s["kind"] == "part", "title": s["title"], "subtitle": "" if s["subtitle"] and (ascii_key(s["title"]).startswith(ascii_key(s["subtitle"])[:30]) or re.fullmatch(r"Chapter [A-Za-z-]+", s["subtitle"].strip())) else s["subtitle"],
                          "cover": figures.place(s["cover"]) if s.get("cover") else None,
                          "blocks": prose_blocks(s["blocks"], figures), "verses": []})
     return front, chapters
@@ -305,7 +322,7 @@ def build_typst_data(book: str, build_dir: Path) -> dict:
     cover_data = {"path": typst_path(cover_path), "aspect": cover.height / cover.width}
     frontispiece = front_figures(book, meta.get("frontispiece_until") or first_text_page(book, assembled), figures, set(meta.get("frontispiece_skip", [])))  # "frontispiece_until": a page whose picture belongs before the contents although its text is a section (a dedication)
     front, chapters = (from_prose_book if meta["layout"] == "prose" else from_verses_book)(assembled, figures)
-    mark_headings(front, chapters, not meta.get("no_topics", False))
+    mark_headings(front, chapters, not meta.get("no_topics", False), meta.get("merge_similar_headings", False))
     copyright_lines = copyright_page(book, first_text_page(book, assembled), meta.get("strip_text", []), meta.get("copyright_page")) if meta.get("keep_copyright") else None
     return {"meta": meta, "layout": meta["layout"], "cover": cover_data, "copyright": copyright_lines, "frontispiece": frontispiece,
             "front": front, "chapters": chapters}

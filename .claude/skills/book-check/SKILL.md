@@ -90,3 +90,5 @@ Format: date — book — what looked wrong — how it was found — fix (meta k
 - 2026-11-05 — Navadvipa — Bengali captions printed as empty boxes — removed in `ocr_text`.
 - 2026-11-05 — drop caps (Navadvipa, Balarāma, Death, Kalachanji) — lone letters before text, "“T", a cap above small capitals — `settle_drop_caps`, `pdf_to_book`. A first letter lost without any block still needs a hand fix.
 - Check this on every book: the section opens at the right line when a chapter starts mid-page (the previous chapter's tail must not sit under the new title).
+- 2026-11-05 — Radharani vol. 1 — " — Chapter One" subtitles and a second "Chapter One" line under each title, empty chapter rows in the contents — read the contents pages as text — dropped in `typeset_book`.
+- 2026-11-05 — Navadvipa — headings returned twice, once misread — read the contents for rows that look like twins — `merge_similar_headings` (opt-in; it deleted a real heading in Balarāma, so look at what it removes).
