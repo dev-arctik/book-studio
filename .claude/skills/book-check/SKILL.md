@@ -81,3 +81,12 @@ Format: date — book — what looked wrong — how it was found — fix (meta k
 - 2026-10-27 — Radharani vol. 1 — drop cap on its own line glued to the chapter title ("PWho is…") — code fix in the digital route.
 - 2026-10-31 — Lord Nrsimha — picture captions read as Cyrillic/Devanagari (QA font FAIL) — `text_fixes` after checking the scan.
 - 2026-10-31 — Toward His Smiling Face — over 999 pages: page files sorted by name jumbled the order; part covers at 10 dpi; plain-titled back matter got "Chapter 64" — sort by number, `drop_pictures`, `kind: back`.
+- 2026-11-05 — overview books, Balarāma, Dāmodara, My Prabhupāda, Nṛsiṁha — "CHAPTER 24" over "23: …" and "17. 1: …" in the contents — a reviewer read page 1 of a chapter and the contents — numbered titles carry no counter (`typeset_book.from_prose_book`); QA FAILs a label that disagrees with its title.
+- 2026-11-05 — all OCR books — Śrila / Śri / Krṣṇa by the hundreds — search the text for them (QA WARN now) — Śrī rule in `ocr_text`, `restore_r_dot` in the meta.
+- 2026-11-05 — The Veil — the supplied cover image belonged to another volume (Canto Ten on a Cantos Five and Six book) — compared the cover with the scan's page 1 — a supplied image is only right if the title and canto match the scan; otherwise use the scan's own cover.
+- 2026-11-05 — Spiritual Tonic, Art of Transformation — banner and background pictures, dedication twice, every chapter twice in the contents, chapter tails under the next chapter — rendered the source page next to ours — page-sized backgrounds dropped, repeated titles dropped, section `markers` for mid-page starts.
+- 2026-11-05 — Demons — Cyrillic look-alikes that Gentium can print (no fallback font) — text search for non-Latin letters — mapped in `pdf_text`, QA FAILs foreign scripts.
+- 2026-11-05 — Following Śrīla Prabhupāda — a whole interview in one paragraph with bold names — read a conversation page — `book_tidy.dialogue_turns`.
+- 2026-11-05 — Navadvipa — Bengali captions printed as empty boxes — removed in `ocr_text`.
+- 2026-11-05 — drop caps (Navadvipa, Balarāma, Death, Kalachanji) — lone letters before text, "“T", a cap above small capitals — `settle_drop_caps`, `pdf_to_book`. A first letter lost without any block still needs a hand fix.
+- Check this on every book: the section opens at the right line when a chapter starts mid-page (the previous chapter's tail must not sit under the new title).

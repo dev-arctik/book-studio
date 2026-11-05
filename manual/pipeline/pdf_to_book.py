@@ -84,7 +84,7 @@ def page_items(page, body: float, margin: float) -> list[dict]:
     w, h = page.rect.width, page.rect.height
     # A decorated initial ("W" set large) belongs at the start of the line beside it ("HEN I FIRST JOINED…"); that first line,
     # set in small capitals, is body text
-    for drop in [l for l in lines if len(l["text"]) == 1 and l["size"] >= 2 * body]:
+    for drop in [l for l in lines if len(l["text"].strip()) <= 2 and l["text"].strip()[-1:].isalpha() and l["size"] >= 2 * body]:  # "“T" counts: an opening quote can come with the cap
         beside = [l for l in lines if l is not drop and l["x0"] > drop["x0"] and abs(l["y"] - drop["y"]) < max(3, 0.5 * drop["size"]) and l["y"] >= drop["y"] - 3]  # a tall cap starts above its line; a title above the cap is not that line
         if beside:
             beside[0]["spans"][0] = {**beside[0]["spans"][0], "text": drop["text"] + beside[0]["spans"][0]["text"]}
@@ -95,6 +95,13 @@ def page_items(page, body: float, margin: float) -> list[dict]:
                 if l is not drop and l["x0"] > drop["x0"] and 0 <= l["y"] - drop["y"] < drop["size"]:
                     l["x0"] = drop["x0"]
             lines.remove(drop)
+    # A cap only a little bigger than the body, on a line of its own above a small-capitals first line ("E" / "DDIE GAVE AWAY…"): glued on as well
+    for cap in [l for l in lines if len(l["text"].strip()) == 1 and l["text"].strip().isupper()]:
+        below = [l for l in lines if l is not cap and 0 < l["y"] - cap["y"] < 2.5 * cap["size"] and abs(l["x0"] - cap["x0"]) < 4 and re.match(r"[A-ZÀ-Ý]{2}", l["text"].strip())]
+        if below:
+            below[0]["spans"][0] = {**below[0]["spans"][0], "text": cap["text"].strip() + below[0]["spans"][0]["text"].lstrip()}
+            below[0]["text"] = cap["text"].strip() + below[0]["text"].lstrip()
+            lines.remove(cap)
     # Check-mark icons mark list items: the line level with an icon, to its right, starts an item
     icons = [b["bbox"] for b in page.get_text("dict")["blocks"] if b["type"] == 1
              and (b["bbox"][2] - b["bbox"][0]) * (b["bbox"][3] - b["bbox"][1]) < PICTURE_SHARE * w * h
@@ -315,6 +322,15 @@ def convert(book: str) -> None:
     # as one full-width picture, whatever else is on them (a full-page painting that opens a part)
     skip_pictures, picture_pages = set(meta.get("skip_pictures", [])), sorted(meta.get("picture_pages", []))
     paras = [p for p in paras if not (p["kind"] == "object" and p["object"]["type"] == "figure" and p["page"] + 1 in skip_pictures)]
+    # A page-sized picture on a page that also holds a paragraph of text is a background (a faded pattern with the page's own text in it): it would print the page twice
+    words = Counter()
+    for p in paras:
+        words[p["page"]] += len((p["text"] or "").split()) if p["kind"] == "p" else 0
+    def page_sized(p):
+        x0, y0, x1, y1 = p["object"].get("bbox", (0, 0, 0, 0))
+        w, h = pdf[p["page"]].rect.width, pdf[p["page"]].rect.height
+        return (x1 - x0) * (y1 - y0) >= 0.9 * w * h
+    paras = [p for p in paras if not (p["kind"] == "object" and p["object"]["type"] == "figure" and words[p["page"]] >= 40 and page_sized(p) and p["page"] + 1 not in picture_pages)]
     if picture_pages:
         paras = [p for p in paras if p["page"] + 1 not in picture_pages]
         for pg in picture_pages:

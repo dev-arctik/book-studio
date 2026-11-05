@@ -37,11 +37,13 @@ def balaram_fonts(pdf) -> set[str]:
     return {font for font, n in seen.items() if n >= 20}
 
 
+# Cyrillic letters a text layer sometimes uses for Latin ones that look the same (Demons: "К а" for "Kṛ", "О Lord"); no book here has Cyrillic text
+CYRILLIC_LOOKALIKES = str.maketrans("АВЕКМНОРСТХаеорсух", "ABEKMHOPCTXaeopcyx")
 LIGATURES = {0xFB00: "ff", 0xFB01: "fi", 0xFB02: "fl", 0xFB03: "ffi", 0xFB04: "ffl"}  # ligature glyphs written as the letters they stand for
 
 
 def span_text(span: dict) -> str:
-    raw = span["text"].replace("​", "").translate(LIGATURES)
+    raw = span["text"].replace("​", "").translate(LIGATURES).translate(CYRILLIC_LOOKALIKES)
     if "\x03" in raw:  # a font without a text map: codes are 29 below the real letters, and "space" is code 3 ("WR\x03" = "to ")
         raw = "".join(chr(ord(c) + 29) if 3 <= ord(c) <= 100 else "é" if c == "Þ" else c for c in raw)
     text = re.sub(r"[\x00-\x08\x0b-\x1f]", "", raw)  # control characters some PDFs hide in the text (a stray \x08)

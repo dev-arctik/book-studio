@@ -73,6 +73,15 @@ def pdf_checks(path: Path) -> list[str]:
         out.append(f"FAIL words: {len(loss)} words look like they lost ligature letters ({', '.join(sorted(set(loss))[:5])}) — word_fixes")
     if re.search(r"[-]", text):
         out.append("FAIL words: private-use characters in the text (an old diacritic font that was not decoded)")
+    foreign = re.findall(r"[Ѐ-ӿऀ-ॿঀ-৿]+", text)  # Gentium has Cyrillic, so a look-alike letter does not show up as a fallback font
+    if foreign:
+        out.append(f"FAIL words: {len(foreign)} Cyrillic / Devanagari / Bengali runs in the text ({', '.join(sorted(set(foreign))[:4])}) — look-alike letters or photo captions read as text")
+    dots = len(re.findall(r"Krṣṇa|Vrṇdā|Śrila|Śrimad|\bŚri\b", text))
+    if dots > 3:
+        out.append(f"WARN words: {dots} words with a missing macron or dot (Krṣṇa, Śrila, Śri) — restore_r_dot / the Śrī rule")
+    labels = re.findall(r"CHAPTER (\d+)\n(\d+)[:.] ", text)
+    if any(a != b for a, b in labels):
+        out.append(f"FAIL headings: {sum(a != b for a, b in labels)} chapter labels disagree with the number in their title")
     return out
 
 

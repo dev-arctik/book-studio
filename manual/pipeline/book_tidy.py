@@ -200,9 +200,22 @@ def dated_headings(blocks: list) -> list:
     return out
 
 
+def dialogue_turns(blocks: list) -> list:
+    """A conversation printed with each turn on its own line ("Reporter: …" / "Śrīla Prabhupāda: …") can come out as one paragraph when the PDF stores the lines
+    run together: a paragraph holding two or more bold "Name:" labels is split before each label."""
+    label = r"<b>[^<]{2,40}:\s*</b>"
+    out = []
+    for b in blocks:
+        if b["type"] == "p" and len(re.findall(label, b["text"])) >= 2:
+            out += [{**b, "text": part.strip()} for part in re.split(rf"\s+(?={label})", b["text"]) if part.strip()]
+        else:
+            out.append(b)
+    return out
+
+
 def tidy_sections(sections: list, meta: dict) -> None:
     for sec in sections:
-        blocks = centred_run_on(title_echo_and_splits(sec))
+        blocks = dialogue_turns(centred_run_on(title_echo_and_splits(sec)))
         blocks = verses_and_translations(blocks)
         blocks = dated_headings(blocks) if meta.get("dated_headings") else blocks
         blocks = subheadings(blocks)

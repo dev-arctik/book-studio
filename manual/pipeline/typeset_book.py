@@ -6,6 +6,7 @@
 import sys; sys.dont_write_bytecode = True  # keep pipeline/ free of __pycache__ clutter
 import local_env
 
+import difflib
 import json
 import re
 import shutil
@@ -16,7 +17,7 @@ import pypdfium2 as pdfium
 import typst
 
 from figures import book_cover, crop_figure, has_ink
-from ocr_text import PICTURE_LABELS, clean_inline, ocr_pages
+from ocr_text import PICTURE_LABELS, ascii_key, clean_inline, ocr_pages
 from pdf_text import page_blocks_text  # (reads no PDF library itself: scan books never load PyMuPDF)
 
 TEMPLATE = local_env.PIPELINE_DIR / "book_template.typ"
@@ -91,6 +92,17 @@ def plain_text(segs: list[dict]) -> str:
     return re.sub(r"\s+", " ", "".join(s["t"] for s in segs)).strip()
 
 
+def repeats_title(heading: str, title: str) -> bool:
+    """A heading that is the section title again — same letters, a cut-off start of it, or a close misspelling."""
+    return difflib.SequenceMatcher(None, heading, title).ratio() >= 0.85 or (len(heading) >= 12 and title.startswith(heading))
+
+
+def restates(heading: str, title: str) -> bool:
+    """A heading that only restates the chapter title ("The Story of Vatsasura" in the chapter Vatsasura) is no topic of its own."""
+    h, t = ascii_key(heading), ascii_key(title)
+    return len(t) >= 6 and t in h and len(h) <= len(t) + 16
+
+
 def mark_headings(front: list[dict], chapters: list[dict], topics: bool = True) -> None:
     """Subheadings: label-like or all-capitals ones are centred; every other (unique) one is a subtopic that the contents lists under
     its chapter, with its page — so the contents shows the chapter names and the topics inside each chapter.
@@ -102,6 +114,9 @@ def mark_headings(front: list[dict], chapters: list[dict], topics: bool = True) 
         for b in sec["blocks"]:
             if b["type"] == "h" and (LABEL_HEADING_RE.match(plain(b)) or (plain(b).isupper() and len(plain(b)) < 60)):
                 b["centre"] = True
+    for sec in front + chapters:  # a page's printed running title or banner repeats the section title as a heading in its first blocks: it is not a topic
+        key = ascii_key(sec["title"])
+        sec["blocks"] = [b for i, b in enumerate(sec["blocks"]) if not (i < 4 and b["type"] == "h" and key and repeats_title(ascii_key(plain(b)), key))]
     for ci, ch in enumerate(chapters):
         k = 0
         for b in ch["blocks"]:
@@ -111,7 +126,7 @@ def mark_headings(front: list[dict], chapters: list[dict], topics: bool = True) 
             label = bool(LABEL_HEADING_RE.match(text))
             if label or (text.isupper() and len(text) < 60):
                 b["centre"] = True
-            if topics and not label and 2 < len(text) <= 120 and not text.endswith((",", ";")) and (counts[text] <= 2 if not text.isupper() else counts[text] == 1 and not re.search(r"\d", text)):
+            if topics and not label and 2 < len(text) <= 120 and not text.endswith((",", ";")) and not text.startswith(("“", "‘", "\"")) and not restates(text, ch["title"]) and not re.search(r"\(Popup|^\d+ \(", text) and not (len(text) > 50 and ": " in text) and (counts[text] <= 2 if not text.isupper() else counts[text] == 1 and not re.search(r"\d", text)):
                 b["id"] = f"sub-{ci}-{k}"  # the template labels it, so the contents can link to it and show its page
                 k += 1
 
@@ -208,7 +223,9 @@ def from_prose_book(assembled: dict, figures: FigureCropper) -> tuple[list, list
             front.append({"title": s["title"], "blocks": prose_blocks(s["blocks"], figures)})
             continue
         n += s["kind"] == "chapter"
-        chapters.append({"number": n if s["kind"] == "chapter" else None, "part": s["kind"] == "part", "title": s["title"], "subtitle": s["subtitle"],
+        # A title that already starts with its own number ("23: The Song of…") keeps it: a running count above it would disagree (Parts restart at 1)
+        own_number = re.match(r"^\d+\s*[:.]\s", s["title"])
+        chapters.append({"number": n if s["kind"] == "chapter" and not own_number else None, "part": s["kind"] == "part", "title": s["title"], "subtitle": "" if s["subtitle"] and ascii_key(s["title"]).startswith(ascii_key(s["subtitle"])[:30]) else s["subtitle"],
                          "cover": figures.place(s["cover"]) if s.get("cover") else None,
                          "blocks": prose_blocks(s["blocks"], figures), "verses": []})
     return front, chapters

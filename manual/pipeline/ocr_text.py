@@ -27,6 +27,10 @@ INLINE_TAGS = r"(?:i|b|sup)"  # emphasis and footnote markers survive; every oth
 def clean_inline(html: str) -> str:
     """Keep only <i>/<b>/<sup> and line breaks; list items and table rows end their line; everything else becomes plain text."""
     html = html.translate(NON_IAST_FIXES).translate(BULLET_FIXES)
+    html = re.sub(r"[ঀ-৿]+", "", html)  # Bengali signs and captions inside photos: Gentium has no Bengali letters, so they would print as empty boxes
+    html = html.replace("r̥", "ṛ").replace("R̥", "Ṛ")  # the reader sometimes puts a combining ring below instead of the dot (Kr̥ṣṇa, kr̥pā)
+    html = re.sub(r"\bŚri(?=\w)", "Śrī", html)  # the reader drops the macron of Śrīla / Śrīmad / Śrīdhara (hundreds per book); no Sanskrit word begins "Śri" + letter
+    html = re.sub(r"\bŚri\b", "Śrī", html)
     html = re.sub(r"(?<=[^\s>])\s*<(?:ol|ul)\b[^>]*>", "\n", html, flags=re.I)  # a list nested inside an item's text: its items are lines too
     html = re.sub(r"<br\s*/?>\s*|</li>|</tr>|</p>\s*(?=<p)", "\n", html, flags=re.I)  # several <p> in one block = separate lines
     html = re.sub(rf"</?(?!{INLINE_TAGS}>)[a-z0-9]+[^>]*>", "", html, flags=re.I)
@@ -85,6 +89,26 @@ def add_paragraph(paragraphs: list, text: str) -> None:
         paragraphs.append(text)
 
 
+def settle_drop_caps(blocks: list) -> list:
+    """The reader sometimes returns a decorated first letter as a block of its own: "A" before "fter binding Kṛṣṇa…" (join them) or "T" before
+    "This island represents…" (the cap is a second copy — drop it). A run of single letters (an A / B / C list) is left alone."""
+    out, i = [], 0
+    while i < len(blocks):
+        b = blocks[i]
+        nxt = blocks[i + 1] if i + 1 < len(blocks) else None
+        letter = re.sub(r"<[^>]+>", "", b.get("html", "")).strip()
+        if b["label"] == "Text" and re.fullmatch(r"[A-ZĀĪŪṚ]", letter) and nxt and nxt["label"] == "Text":
+            rest = re.sub(r"<[^>]+>", "", nxt["html"]).strip()
+            if len(rest) > 3:
+                if rest[0].islower():
+                    nxt["html"] = re.sub(r"^((?:<[^>]+>)*)", lambda m: m.group(1) + letter, nxt["html"].strip(), count=1)
+                i += 1  # the lone letter is dropped either way (joined onto the next block, or a duplicate of its first letter)
+                continue
+        out.append(b)
+        i += 1
+    return out
+
+
 def ocr_pages(book: str):
     """Yield (page number, blocks in reading order) for every OCR'd page of a book."""
     # sort by page number, not by name: page-1000 would otherwise land between page-100 and page-101 in a book over 999 pages
@@ -92,7 +116,7 @@ def ocr_pages(book: str):
         data = json.loads(path.read_text(encoding="utf-8"))
         for b in data["blocks"]:
             b["image_bbox"] = data["image_bbox"]  # page size in the OCR render's pixels — needed to crop pictures later
-        yield int(path.stem.split("-")[1]), sorted(data["blocks"], key=lambda b: b["reading_order"])
+        yield int(path.stem.split("-")[1]), settle_drop_caps(sorted(data["blocks"], key=lambda b: b["reading_order"]))
 
 
 def ascii_key(title: str) -> str:
