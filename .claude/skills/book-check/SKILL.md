@@ -92,3 +92,8 @@ Format: date — book — what looked wrong — how it was found — fix (meta k
 - Check this on every book: the section opens at the right line when a chapter starts mid-page (the previous chapter's tail must not sit under the new title).
 - 2026-11-05 — Radharani vol. 1 — " — Chapter One" subtitles and a second "Chapter One" line under each title, empty chapter rows in the contents — read the contents pages as text — dropped in `typeset_book`.
 - 2026-11-05 — Navadvipa — headings returned twice, once misread — read the contents for rows that look like twins — `merge_similar_headings` (opt-in; it deleted a real heading in Balarāma, so look at what it removes).
+- 2026-11-05 — The Jolly Swami — typesetting tags ("[inset]", "[subhead]", "[[sep]]") in the text — text search for "[" tags in the finished PDF — `settle_markup`; look for any leftover tag after a rebuild.
+- 2026-11-05 — Here Is Śrīla Prabhupāda — page numbers in the scan's headers run 91…116 backwards for 26 pages — printed numbers of every scan page listed in a table (ocr JSON headers) — `page_moves`; check printed page numbers in order for EVERY scan before building.
+- 2026-11-05 — My Letters vols. 2/3 — letters merged with commentary, date line lost — read the first page of a month — `letters` setting; make sure the date line survives.
+- 2026-11-05 — all Group 5 — a chapter that starts mid-page carried the previous chapter's tail — read the first lines under each chapter title — automatic heading match in `assemble_prose`.
+- 2026-11-05 — Begging, Obstacles, Vaiṣṇava Compassion — glossaries and acknowledgement lists as one paragraph — read the glossary page — `entry_pages`, `list_pages`, entry-aware gluing.

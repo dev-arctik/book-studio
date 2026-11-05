@@ -29,7 +29,7 @@ TOC_PART_RE = re.compile(r"^Part\s+(\d+)\s*:\s*(.+)$", re.I)
 TOC_BOOK_RE = re.compile(r"^((?:BOOK|PART)\s+[A-Z]+)\s*:\s*(.+)$", re.I)  # "BOOK ONE: FROM THE MYSTIC WEST 1967–68"
 TOC_NUMBERED_RE = re.compile(r"^(\d{1,2})\s+([A-Za-z].+)$")  # "1 Children of the Fifties"
 TOC_CHAPTER_RE = re.compile(r"^Chapter\s+(\d+)\s*:\s*(.+)$", re.I)
-SCENE_BREAK_RE = re.compile(r"^\*(\s*\*)+$")
+SCENE_BREAK_RE = re.compile(r"^(?:\*(\s*\*)+|~\*~|•)$")  # "* * *", "~*~", or a lone bullet printed centred between scenes
 ORNAMENT_RE = re.compile(r"^[_\-–—]+\*{3,}[_\-–—]+$")  # "__*****__": a printed divider line, left out
 PART_LABEL_RE = re.compile(r"^PART\s+([A-Z]+|\d{1,2})$", re.I)  # "PART ONE" / "PART 1" above a part title
 NOTE_START_RE = re.compile(r"^\d{1,3}\.\s")
@@ -162,7 +162,104 @@ def load_blocks(book: str, academic: bool = False, facsimiles: set = frozenset()
                            "shape": shapes.get(b["reading_order"], ""), "rule": b["html"].lstrip().startswith("<hr")})
     if academic:
         mark_footnotes(blocks)
-    return blocks, numbered_pages
+    return settle_markup(blocks), numbered_pages
+
+
+def settle_markup(blocks: list) -> list:
+    """Some e-texts keep their typesetting tags in the text: "[subhead]" … "[end subhead]" around a heading, "[inset]" / "[opening quote]" … "[end inset]"
+    around quotations, "[[sep]]" between the lines of a poem (The Jolly Swami). The tags are blocks of their own or sit at the start or end of a block.
+    They go; headings become headings, inset runs become quotations."""
+    OPEN = r"\[(?:opening quote|inset quote|inset|opening quote, inset)\]"
+    CLOSE = r"\[end (?:inset|opening quote|quote|inset quote)\]"
+    out, inset, head = [], False, None
+    for b in blocks:
+        if b["label"] != "Text":
+            if b.get("text"):  # a tag the reader glued into a heading ("India and Life Membership [end subhead]")
+                b = {**b, "text": re.sub(r"\s*\[(?:end )?subhead\]\s*", "", b["text"], flags=re.I)}
+            out.append(b)
+            continue
+        text = re.sub(r"\s*\[(?:sep|left|right)\]\s*", " ", b["text"], flags=re.I)
+        glued = re.match(r"^(.*[.!?”\"])\s+([^.!?]{3,80}?)\s*\[end subhead\]\s*$", text, re.S | re.I)  # a heading glued to the end of a paragraph, its opening tag lost by the reader
+        if glued and "[subhead]" not in text.lower():
+            out.append({**b, "text": glued.group(1).strip()})
+            out.append({**b, "label": "SectionHeader", "text": glued.group(2).strip(), "shape": ""})
+            continue
+        starts_inset, ends_inset = bool(re.match(rf"\s*{OPEN}", text, re.I)), bool(re.search(rf"{CLOSE}\s*$", text, re.I))
+        starts_head, ends_head = bool(re.match(r"\s*\[subhead\]", text, re.I)), bool(re.search(r"\[end subhead\]\s*$", text, re.I))
+        text = re.sub(rf"\s*(?:{OPEN}|{CLOSE}|\[subhead\]|\[end subhead\])\s*", " ", text, flags=re.I).strip()
+        if starts_inset:
+            inset = True
+        if starts_head:
+            head = []
+        if text:
+            if head is not None and len(head) >= 3:  # a "[subhead]" that never closes: what was gathered is a heading, the rest is ordinary text
+                out.append({**head[0], "label": "SectionHeader", "text": " ".join(plain(h["text"]) for h in head), "shape": ""})
+                head = None
+            if head is not None:
+                head.append({**b, "text": text})
+            elif "[[sep]]" in text:
+                out.append({**b, "text": text.replace("[[sep]]", chr(10)).strip(), "shape": "centred"})
+            elif inset:
+                out.append({**b, "shape": "inset", "text": re.sub(r"^--", "—", text)})
+            else:
+                out.append({**b, "text": text})
+        if ends_head:
+            if head:
+                out.append({**b, "label": "SectionHeader", "text": " ".join(plain(h["text"]) for h in head), "shape": ""})
+            head = None
+        if ends_inset:
+            inset = False
+    return out
+
+
+ENTRY_START = re.compile(r"\n(?=(?:<i>)?[^\s—<]{1,30}(?:[ -][^\s—<]{1,30}){0,3}(?:</i>)?—)")  # a printed line that opens with "term—"
+
+
+def split_entries(blocks: list, pages: set) -> list:
+    """A glossary printed one entry per line ("term—meaning") can come out as one paragraph when the reader joined the lines: on the pages listed in
+    "entry_pages" a text block is split before each printed line that opens with "term—"."""
+    if not pages:
+        return blocks
+    out = []
+    for b in blocks:
+        if b["page"] in pages and b["label"] == "Text" and "—" in b["text"]:
+            parts = [x for x in ENTRY_START.split(b["text"]) if x.strip()]
+            out += [{**b, "text": x.strip()} for x in parts]
+        else:
+            out.append(b)
+    return out
+
+
+LETTER_END_RE = re.compile(r"^(Your (?:ever )?well-?wisher|Yours (?:in|sincerely)|Your servant)\b", re.I)
+
+
+def settle_letters(blocks: list) -> list:
+    """Books that quote letters between commentary (My Letters from Śrīla Prabhupāda): a letter runs from its place and date lines through "My Dear …," to the
+    sign-off. The place and date are centred, the body is an inset quotation, the sign-off is right-aligned — the commentary after it stays prose."""
+    i = 0
+    while i < len(blocks):
+        b = blocks[i]
+        if b["label"] == "Text" and re.match(r"^My Dear\b", plain(b["text"])) and len(plain(b["text"])) < 400:
+            start = i
+            while start > 0 and i - start < 2 and blocks[start - 1]["label"] == "Text" and blocks[start - 1]["page"] == b["page"] and len(plain(blocks[start - 1]["text"])) < 45 and not ends_sentence(blocks[start - 1]["text"]):
+                start -= 1
+            for k in range(start, i):
+                blocks[k]["shape"] = "centred"
+            end = next((j for j in range(i, min(i + 14, len(blocks))) if blocks[j]["label"] == "Text" and LETTER_END_RE.match(plain(blocks[j]["text"]))), None)
+            last = end if end is not None else i
+            for k in range(i, last):
+                if blocks[k]["label"] == "Text":
+                    blocks[k]["shape"] = "inset"
+            if end is not None:
+                sign = blocks[end]
+                m = re.match(r"^(.*?Bhaktivedanta Swami)\s*(.*)$", sign["text"], re.S)
+                if m and m.group(2).strip():  # commentary glued to the sign-off by the reader: it goes back to prose
+                    sign["text"] = m.group(1)
+                    blocks.insert(end + 1, {**sign, "text": m.group(2).strip(), "shape": ""})
+                sign["shape"] = "right"
+            i = last
+        i += 1
+    return blocks
 
 
 def mark_footnotes(blocks) -> None:
@@ -495,13 +592,16 @@ def classify(text: str, label: str, prev: dict | None) -> list[dict]:
     return [{"type": "p", "text": join_lines(text)}]
 
 
+ENTRY_LINE_RE = re.compile(r"[^\s—]{1,30}(?:[ -][^\s—]{1,30}){0,3}—")  # a glossary line that opens "term—": a new entry, never glued onto the line above
 LABEL_START_RE = re.compile(r"<b>[^<]{3,60}:</b>")
 
 
 def unfinished(paragraph: dict) -> bool:
     """A paragraph a page break (or a picture) cut off: no closing punctuation, and not an all-capitals byline or label
     ("BY SRILA BHAKTISIDDHANTA SARASVATI PRABHUPADA"), which ends without a full stop."""
-    return not ends_sentence(paragraph["text"]) and not plain(paragraph["text"]).isupper()
+    text = plain(paragraph["text"])
+    dated = len(text) < 70 and re.match(r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\b", text) and not text.endswith(".")  # a dated or placed line ("April 27 - July 25, 1972", "February, Stroudsburg, Pa") is complete in itself
+    return not ends_sentence(paragraph["text"]) and not text.isupper() and not dated
 
 
 def glue(paragraph: dict, text: str) -> None:
@@ -513,7 +613,7 @@ def add_block(section: Section, new: dict) -> None:
     # A paragraph (or quotation) cut by a page break doesn't end in sentence punctuation — glue the next piece onto it
     # (a quotation only across a page: on one page, two quoted blocks are separate paragraphs as printed)
     # A paragraph opening with a bold label ("<b>In the mode of passion:</b> …") starts afresh, even after a line that ends in a colon
-    if new["type"] in ("p", "blockquote") and last and last["type"] == new["type"] and unfinished(last) and last.get("page") != new.get("page", -1) and not LABEL_START_RE.match(new["text"]):
+    if new["type"] in ("p", "blockquote") and last and last["type"] == new["type"] and unfinished(last) and last.get("page") != new.get("page", -1) and not LABEL_START_RE.match(new["text"]) and not ENTRY_LINE_RE.match(plain(new["text"])):
         glue(last, new["text"])
         return
     # A photo in the middle of a paragraph: keep the paragraph whole and let the photo follow it
@@ -523,7 +623,7 @@ def add_block(section: Section, new: dict) -> None:
         return
     # A paragraph starting in lowercase continues an earlier one — even after a closing quote mark ("…tho!" / "blends with…"),
     # or with a picture or verse placed in between by the page break; glue it to the nearest paragraph within 3 blocks
-    if new["type"] == "p" and plain(new["text"])[:1].islower():
+    if new["type"] == "p" and plain(new["text"])[:1].islower() and not ENTRY_LINE_RE.match(plain(new["text"])):
         for prev in reversed(section.blocks[-3:]):
             if prev["type"] in ("p", "entry"):  # a list item can continue onto the next page too
                 # …but never onto a paragraph that truly ended with . ! or ? — a quote mark or comma may close a speech mid-sentence
@@ -706,7 +806,7 @@ def assemble(blocks, contents, unnumbered: set, dropped: set, front_prefixes: tu
             continue
         # Running headers sometimes come back as headings ("Yavat Part One" on every page) — drop repeats of the section title
         # (and a date line under the title that adds the year to the contents' subtitle: "OCTOBER 20–30, 1970")
-        if heading_like and (max(ratio(p, current.title), ratio(p, f"{current.title} {current.subtitle}"),
+        if heading_like and blk.get("shape") not in ("centred", "inset", "right") and (max(ratio(p, current.title), ratio(p, f"{current.title} {current.subtitle}"),
                                  ratio(p, current.subtitle) if current.subtitle else 0) >= TITLE_MATCH_RATIO
                              or (current.subtitle and not current.blocks and ascii_key(p).startswith(ascii_key(current.subtitle)))):
             continue
@@ -937,11 +1037,14 @@ def main():
     blocks, numbered_pages = load_blocks(book, meta.get("academic", False), set(meta.get("facsimile_pages", [])), meta.get("inset_quotes", False),
                                          meta.get("running_heads", []), meta.get("shaped_blocks", False),
                                          set(meta.get("picture_pages", [])))  # academic flag also goes to assemble()
+    if meta.get("letters"):
+        blocks = settle_letters(blocks)
     # Everything after the book's last content page is left out: an index not in the contents (its page numbers would be
     # wrong in our layout), endpapers and the back cover (Dāmodara-jananī: General Index from scan page 462)
     if last := meta.get("last_page"):
         blocks = [b for b in blocks if b["page"] <= last]
     blocks = reorder_pages(blocks, set(meta.get("skip_pages", [])), meta.get("page_moves", []))
+    blocks = split_entries(blocks, set(meta.get("entry_pages", [])))
     # "drop_pictures": pages whose picture is decoration (a framed ornament with the chapter's name inside it) — the text stays
     drop_pictures = set(meta.get("drop_pictures", []))
     blocks = [b for b in blocks if not (b["page"] in drop_pictures and (b["label"] in PICTURE_LABELS or b["label"] == "FullPage"))]  # a page the reader took for one big picture counts too
@@ -956,6 +1059,14 @@ def main():
     # ṛ first, so hand-checked fixes can be written in the book's correct spelling ("Kṛṣṇa")
     fixes = restore_r_dot(blocks) if meta.get("restore_r_dot") else []
     fixes += apply_text_fixes(blocks, meta.get("text_fixes", []))
+    for pattern, repl in meta.get("regex_fixes", []):  # [pattern, replacement] over every block's text — a misread repeated in many places ("11:00 A.C." for "A.M.")
+        for b in blocks:
+            if b.get("text"):
+                b["text"] = re.sub(pattern, repl, b["text"])
+    for rx in meta.get("heading_patterns", []):  # text lines that are the book's entry headings (a date, a time of day): set as subheadings
+        for b in blocks:
+            if b["label"] == "Text" and re.fullmatch(rx, plain(b["text"])):
+                b["label"] = "SectionHeader"
     unnumbered, dropped = set(meta.get("unnumbered_sections", [])), set(meta.get("drop_sections", []))
     contents_info = {}
     contents = read_contents(blocks, unnumbered | dropped, meta.get("contents_pages"), meta.get("chapter_subentries", False), contents_info)
@@ -972,7 +1083,17 @@ def main():
     front_prefixes = tuple(meta.get("front_sections", []))
     academic = meta.get("academic", False)
     italic_prose = meta.get("italic_prose", False)
-    inserted = meta.get("insert_sections", [])
+    inserted = [dict(x) for x in meta.get("insert_sections", [])]
+    for x in inserted:  # a section that starts mid-page opens at its own heading, so the previous section's last lines stay with it: found by the heading text when "at" is not given
+        if x.get("at") or x.get("kind") == "part":
+            continue
+        want = ascii_key(re.sub(r"^\d+\s*[:.]\s*", "", x["title"]))
+        for b in blocks:
+            if b["page"] == x["page"] and b["label"] == "SectionHeader":
+                got = ascii_key(re.sub(r"^\d+\s*[:.]\s*", "", plain(b["text"])))
+                if want and (got == want or (want in got and len(got) <= len(want) + 8)):
+                    x["at"] = "^" + re.escape(plain(b["text"]))
+                    break
     opts = {"ocr_tables": meta.get("ocr_tables", False), "gallery": {x["title"] for x in inserted if x.get("gallery")},
             "list_pages": set(meta.get("list_pages", [])),  # pages whose short lines are list items (a list of titles)
             "text_pages": set(meta.get("text_pages", [])),
