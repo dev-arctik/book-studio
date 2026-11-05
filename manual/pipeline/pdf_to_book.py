@@ -227,7 +227,8 @@ def join_cut_paragraphs(blocks: list[dict]) -> list[dict]:
     """A plain paragraph that opens lowercase joins the earlier plain paragraph that stopped mid-sentence (pictures and tables between them do not matter)."""
     joined, last_p = [], None
     for blk in blocks:
-        if blk["type"] == "p" and last_p is not None and blk["text"][:1].islower() and not re.search(r"[.!?:;”’)\]>]\s*$", last_p["text"]):
+        if (blk["type"] == "p" and last_p is not None and blk["text"][:1].islower() and not re.search(r"[.!?:;”’)\]>]\s*$", last_p["text"])
+                and not re.match(r"(?:<i>)?[^\s—–<]{1,30}(?:[ -][^\s—–<]{1,30}){0,3}(?:</i>)?\s?[—–]\s", blk["text"])):  # a glossary entry ("term – meaning") is a new paragraph, not a continuation
             last_p["text"] += " " + blk["text"]
             continue
         joined.append(blk)
@@ -447,6 +448,18 @@ def convert(book: str) -> None:
         sec["blocks"] = [{k: v for k, v in b.items() if k != "top"} for b in merge_tables(sec["blocks"])]
         sections.append(sec)
 
+    if meta.get("restore_r_dot"):  # the same ṛ repair as the OCR route: a word whose r → ṛ twin the book itself prints elsewhere gets its dot back
+        from assemble_prose import restore_r_dot
+        slots = [(sec, key) for sec in sections for key in ("title", "subtitle")]
+        for sec in sections:
+            for b in sec["blocks"]:
+                slots += [(b, "text")] if isinstance(b.get("text"), str) else []
+                slots += [(b["lines"], i) for i in range(len(b["lines"]))] if isinstance(b.get("lines"), list) else []
+        slots = [(c, k) for c, k in slots if isinstance(c[k], str)]
+        pseudo = [{"text": c[k]} for c, k in slots]
+        print(restore_r_dot(pseudo)[0])
+        for (c, k), p in zip(slots, pseudo):
+            c[k] = p["text"]
     apply_fixes(sections, meta)
     for sec in sections:
         sec["blocks"] = join_cut_paragraphs(sec["blocks"])  # a fix may leave a paragraph cut mid-sentence

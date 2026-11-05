@@ -29,6 +29,8 @@ def clean_inline(html: str) -> str:
     html = html.translate(NON_IAST_FIXES).translate(BULLET_FIXES)
     html = re.sub(r"[ঀ-৿]+", "", html)  # Bengali signs and captions inside photos: Gentium has no Bengali letters, so they would print as empty boxes
     html = html.replace("r̥", "ṛ").replace("R̥", "Ṛ")  # the reader sometimes puts a combining ring below instead of the dot (Kr̥ṣṇa, kr̥pā)
+    html = re.sub(r"\b(K)r(ṣṇ)", r"\1ṛ\2", html)  # Krṣṇa / Krṣṇadāsa: the dot sits under the r in every IAST spelling
+    html = re.sub(r"\b(V)r(ṇd)", r"\1ṛ\2", html)  # Vrṇdāvana
     html = re.sub(r"\bŚri(?=\w)", "Śrī", html)  # the reader drops the macron of Śrīla / Śrīmad / Śrīdhara (hundreds per book); no Sanskrit word begins "Śri" + letter
     html = re.sub(r"\bŚri\b", "Śrī", html)
     html = re.sub(r"(?<=[^\s>])\s*<(?:ol|ul)\b[^>]*>", "\n", html, flags=re.I)  # a list nested inside an item's text: its items are lines too

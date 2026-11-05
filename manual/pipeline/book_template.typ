@@ -167,6 +167,7 @@
   pagebreak(weak: true)
   v(14mm)
   align(center)[
+    #set par(justify: false)
     // Closing sections like "A Few Words…" carry no chapter number
     #if ch.number != none [#text(size: 9pt, fill: soft, tracking: 0.15em)[CHAPTER #ch.number] \ #v(0.6em)]
     #heading(level: 1, outlined: true, text(size: 19pt, style: "italic", fill: accent, weight: "regular", hyphenate: false, ch.title)) #label("ch-" + str(i))
@@ -191,7 +192,7 @@
   set page(header: none, footer: none)
   counter(page).update(0)
   v(40mm)
-  align(center)[
+  align(center)[#set par(justify: false)
     #text(size: 30pt, style: "italic", fill: accent, hyphenate: false, meta.title)
     #v(0.4em)
     #text(size: 13pt, fill: soft, meta.subtitle)
@@ -227,6 +228,16 @@
   align(center, text(size: 16pt, style: "italic", fill: accent)[Contents])
   v(1em)
   set text(size: 10pt)
+  // Foreword, Preface, Introduction… come first, on their roman-numbered pages, as the printed contents lists them
+  for (i, sec) in data.front.enumerate() {
+    context {
+      let loc = locate(label("fr-" + str(i)))
+      block(below: 0.75em, link(loc, grid(
+        columns: (2em, 1fr, auto), column-gutter: 0.6em,
+        [], emph(sec.title), numbering("i", counter(page).at(loc).first()),
+      )))
+    }
+  }
   for (i, ch) in data.chapters.enumerate() {
     context {
       let loc = locate(label("ch-" + str(i)))
@@ -254,9 +265,9 @@
   }
 
   // Foreword, Introduction… — unnumbered, on roman-numbered pages before chapter 1
-  for sec in data.front {
+  for (i, sec) in data.front.enumerate() {
     pagebreak()
-    align(center, text(size: 16pt, style: "italic", fill: accent, sec.title))
+    align(center)[#heading(level: 1, outlined: true, text(size: 16pt, style: "italic", fill: accent, weight: "regular", hyphenate: false, sec.title)) #label("fr-" + str(i))]
     v(1em)
     for b in sec.blocks { prose-block(b) }
   }

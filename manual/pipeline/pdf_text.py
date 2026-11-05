@@ -43,6 +43,8 @@ LIGATURES = {0xFB00: "ff", 0xFB01: "fi", 0xFB02: "fl", 0xFB03: "ffi", 0xFB04: "f
 
 
 def span_text(span: dict) -> str:
+    if span["font"].startswith(("Wingdings", "ZapfDingbats", "Webdings")) and span["text"].strip():  # a symbol font draws its list bullet as a letter ("õ", "Ø")
+        return "•"
     raw = span["text"].replace("​", "").translate(LIGATURES).translate(CYRILLIC_LOOKALIKES)
     if "\x03" in raw:  # a font without a text map: codes are 29 below the real letters, and "space" is code 3 ("WR\x03" = "to ")
         raw = "".join(chr(ord(c) + 29) if 3 <= ord(c) <= 100 else "é" if c == "Þ" else c for c in raw)

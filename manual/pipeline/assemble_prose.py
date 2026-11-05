@@ -230,7 +230,25 @@ def split_entries(blocks: list, pages: set) -> list:
     return out
 
 
-LETTER_END_RE = re.compile(r"^(Your (?:ever )?well-?wisher|Yours (?:in|sincerely)|Your servant)\b", re.I)
+def join_verse_runs(blocks: list) -> list:
+    """A verse the reader returned one printed line per block ("yajnaih sankirtana-prayair" / "yajanti hi su-medhasah"), followed by its bracketed translation:
+    the lines become one centred verse and the translation an inset quotation (meta "verse_runs")."""
+    out, i = [], 0
+    while i < len(blocks):
+        j = i
+        while j < len(blocks) and blocks[j]["label"] == "Text" and blocks[j]["page"] == blocks[i]["page"] and len(plain(blocks[j]["text"])) < 45 and not ends_sentence(blocks[j]["text"]) and plain(blocks[j]["text"])[:1].islower():
+            j += 1
+        if j - i >= 2 and j < len(blocks) and blocks[j]["label"] == "Text" and plain(blocks[j]["text"]).startswith("["):
+            out.append({**blocks[i], "text": chr(10).join(b["text"] for b in blocks[i:j]), "shape": "centred"})
+            out.append({**blocks[j], "shape": "inset"})
+            i = j + 1
+        else:
+            out.append(blocks[i])
+            i += 1
+    return out
+
+
+LETTER_END_RE =re.compile(r"^(Your (?:ever )?well-?wisher|Yours (?:in|sincerely)|Your servant)\b", re.I)
 
 
 def settle_letters(blocks: list) -> list:
@@ -866,6 +884,9 @@ def assemble(blocks, contents, unnumbered: set, dropped: set, front_prefixes: tu
         if blk["label"] == "Text" and blk["shape"] == "centred":  # a quoted poem, line by line
             add_block(current, {"type": "quote", "lines": [plain(ln) for ln in blk["text"].split("\n") if plain(ln)]})
             continue
+        if blk.get("heading"):  # a line matched by "heading_patterns": a subheading whatever its punctuation
+            add_block(current, {"type": "h", "text": plain(blk["text"])})
+            continue
         prev = current.blocks[-1] if current.blocks else None
         for new in classify(blk["text"], blk["label"], prev and {**prev, "first": len(current.blocks) == 1}):
             if new["type"] == "h" and current.numeral == "I":
@@ -1039,6 +1060,8 @@ def main():
                                          set(meta.get("picture_pages", [])))  # academic flag also goes to assemble()
     if meta.get("letters"):
         blocks = settle_letters(blocks)
+    if meta.get("verse_runs"):
+        blocks = join_verse_runs(blocks)
     # Everything after the book's last content page is left out: an index not in the contents (its page numbers would be
     # wrong in our layout), endpapers and the back cover (Dāmodara-jananī: General Index from scan page 462)
     if last := meta.get("last_page"):
@@ -1066,7 +1089,7 @@ def main():
     for rx in meta.get("heading_patterns", []):  # text lines that are the book's entry headings (a date, a time of day): set as subheadings
         for b in blocks:
             if b["label"] == "Text" and re.fullmatch(rx, plain(b["text"])):
-                b["label"] = "SectionHeader"
+                b["heading"] = True
     unnumbered, dropped = set(meta.get("unnumbered_sections", [])), set(meta.get("drop_sections", []))
     contents_info = {}
     contents = read_contents(blocks, unnumbered | dropped, meta.get("contents_pages"), meta.get("chapter_subentries", False), contents_info)
@@ -1169,7 +1192,7 @@ def main():
         if s.title in meta.get("part_sections", {}):
             s.kind, s.subtitle = "part", meta["part_sections"][s.title]
     # With mid-page chapter starts ("at") a part's page also holds the dialogue's title lines before the first chapter; its own title page says it
-    if any(x.get("at") for x in inserted):
+    if any(x.get("at") for x in meta.get("insert_sections", [])):  # only when the book's settings ask for "at" (not the automatic one): a part can hold real text
         for s in sections:
             if s.kind == "part":
                 s.blocks = [b for b in s.blocks if b["type"] == "figure"]
