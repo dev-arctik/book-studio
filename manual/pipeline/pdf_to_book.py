@@ -9,6 +9,7 @@ import sys; sys.dont_write_bytecode = True  # keep pipeline/ free of __pycache__
 import local_env
 
 import difflib
+import unicodedata
 import json
 import re
 from collections import Counter
@@ -17,7 +18,7 @@ import pymupdf
 
 import pdf_text
 from book_tidy import tidy_sections
-from ocr_text import tidy_dedication
+from ocr_text import ascii_key, tidy_dedication
 from pdf_text import balaram_fonts, body_metrics, indent_band, page_lines, paragraphs, running_heads
 
 META_FILE = local_env.META_FILE
@@ -282,6 +283,7 @@ def convert(book: str) -> None:
     line_pages = set(range(meta["line_pages"][0], meta["line_pages"][1] + 1)) if meta.get("line_pages") else set()  # a list of names: one line, one item
     pdf_text.LINE_PAGES = {n - 1 for n in line_pages}
     pdf_text.DROP_LINES = meta.get("drop_lines", [])
+    pdf_text.HEADING_LINES = {re.sub(r"[^a-z0-9]", "", unicodedata.normalize("NFKD", t).encode("ascii", "ignore").decode().lower()) for t in meta.get("heading_lines", [])}
     pdf_text.BULLET_FONTS = tuple(meta.get("bullet_fonts", []))
     pdf_text.PAGE_NUMBER_BAND = meta.get("page_number_band", pdf_text.PAGE_NUMBER_BAND)
     pdf_text.NUMBERED_ITEMS = bool(meta.get("numbered_items"))
@@ -345,7 +347,7 @@ def convert(book: str) -> None:
     cuts = []
     if any(markers):
         for (_, page, _, _), mark in zip(outline, markers):
-            cuts.append(next((k for k, p in enumerate(paras) if p["page"] + 1 >= page and (not mark or p["page"] + 1 == page and re.sub(r"\W", "", re.sub(r"<[^>]+>", "", p["text"] or " ".join(p["object"].get("lines", [])) if p["kind"] == "object" else p["text"])).lower().startswith(re.sub(r"\W", "", mark).lower()))), len(paras)))
+            cuts.append(next((k for k, p in enumerate(paras) if p["page"] + 1 >= page and (not mark or p["page"] + 1 == page and ascii_key(re.sub(r"<[^>]+>", "", p["text"] or " ".join(p["object"].get("lines", [])) if p["kind"] == "object" else p["text"])).startswith(ascii_key(mark)))), len(paras)))
             if mark and cuts[-1] == len(paras):
                 print(f"  ! marker not found on page {page}: {mark!r}")  # the section would come out empty  # (a centred heading is an object: its lines are the text)
     for i, (title, page, kind, lead) in enumerate(outline):

@@ -751,6 +751,10 @@ def assemble(blocks, contents, unnumbered: set, dropped: set, front_prefixes: tu
             if rows:
                 width = max(len(r) for r in rows)
                 rows = [r + [""] * (width - len(r)) for r in rows]
+                keep = [i for i in range(width) if any(re.search(r"\w", r[i]) for r in rows[1:])] if len(rows) > 1 else list(range(width))  # a column that held only Devanagari is empty now: drop it
+                if keep and len(keep) < width:
+                    rows = [[r[i] for i in keep] for r in rows]
+                    width = len(keep)
                 last = sections[-1].blocks[-1] if sections[-1].blocks else None
                 if last and last["type"] == "table" and len(last["rows"][0]) == width:
                     last["rows"] += rows[1:] if rows[0] == last["rows"][0] else rows  # one table printed over several pages

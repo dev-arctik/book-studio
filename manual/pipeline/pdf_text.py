@@ -39,13 +39,14 @@ def balaram_fonts(pdf) -> set[str]:
 
 # Cyrillic letters a text layer sometimes uses for Latin ones that look the same (Demons: "К а" for "Kṛ", "О Lord"); no book here has Cyrillic text
 CYRILLIC_LOOKALIKES = str.maketrans("АВЕКМНОРСТХаеорсух", "ABEKMHOPCTXaeopcyx")
+BULLET_GLYPHS = str.maketrans({c: "•" for c in "●♦►▪➤■◆▸▶➢✓✔□⇒◦"})  # list bullets Gentium lacks: the plain bullet
 LIGATURES = {0xFB00: "ff", 0xFB01: "fi", 0xFB02: "fl", 0xFB03: "ffi", 0xFB04: "ffl"}  # ligature glyphs written as the letters they stand for
 
 
 def span_text(span: dict) -> str:
     if span["font"].startswith(("Wingdings", "ZapfDingbats", "Webdings")) and span["text"].strip():  # a symbol font draws its list bullet as a letter ("õ", "Ø")
         return "•"
-    raw = span["text"].replace("​", "").translate(LIGATURES).translate(CYRILLIC_LOOKALIKES)
+    raw = span["text"].replace("​", "").translate(LIGATURES).translate(CYRILLIC_LOOKALIKES).translate(BULLET_GLYPHS)
     if "\x03" in raw:  # a font without a text map: codes are 29 below the real letters, and "space" is code 3 ("WR\x03" = "to ")
         raw = "".join(chr(ord(c) + 29) if 3 <= ord(c) <= 100 else "é" if c == "Þ" else c for c in raw)
     text = re.sub(r"[\x00-\x08\x0b-\x1f]", "", raw)  # control characters some PDFs hide in the text (a stray \x08)
@@ -79,6 +80,7 @@ HEAL_ENGLISH = False  # book_meta.json "heal_hyphens": see heal_hyphens()
 SHORT_WORDS = {"all", "one", "two", "non", "not", "god", "her", "his", "our", "its", "the", "man", "men", "big", "day", "new", "old", "out", "who", "how", "low", "sun", "ill", "few", "way", "law", "sex", "pro", "any", "ten", "six", "far", "top", "end", "age", "fifth", "third", "tenth", "semi", "anti", "half", "well", "ever", "high", "long", "free", "full", "good", "life", "love", "hand", "head", "mind", "soul", "body", "dog", "hog"}  # real words a hyphen follows
 SUFFIXES = {"ly", "ing", "ed", "er", "ers", "es", "ful", "less", "able", "ally", "ous", "ity", "ness", "ment", "ments", "tion", "tions", "ation", "ations", "ize", "ized", "ate", "ence", "ance", "ive", "al", "ism", "ist", "ists"}
 NUMBERED_ITEMS = False  # book_meta.json "numbered_items": every line opening with "N. " starts a paragraph
+HEADING_LINES: set = set()  # ascii keys of lines that are headings of their own (book_meta.json "heading_lines"): a typed-up book whose headings have no gap round them
 DROP_LINES: list = []  # regexes (book_meta.json "drop_lines"): a line matching one is left out wherever it sits — running heads a typed-up book carries in the middle of its text
 PAGE_SCALE: dict[int, float] = {}  # per page (0-based): factor for every font size — a book that sets each chapter's body text at its own size (17 pt, then 14 pt) reads as one size
 PAGE_SHIFT: dict[int, float] = {}  # per page (0-based): points added to every x, so mirrored facing pages share one left margin
@@ -241,6 +243,8 @@ def paragraphs(pages: list[list[dict]], body: float, pitch: float, right: float,
             elif i == 0:
                 # Continue a paragraph cut by the page break only if it stopped mid-sentence
                 new = not (last and last["kind"] == kind == "p" and not last["text"].rstrip().endswith(TERMINAL))
+                if HEADING_LINES and re.sub(r"[^a-z0-9]", "", unicodedata.normalize("NFKD", l["text"]).encode("ascii", "ignore").decode().lower()) in HEADING_LINES:
+                    new = True  # a heading line at the very top of a page
                 if re.match(r"Chapter\s+[\w-]+(\s|$)", l["text"]):
                     new = True  # a page that opens with "Chapter Thirty-five …" begins a chapter, whatever the page before ended on
                 if margin is not None and last and last["text"].rstrip().endswith("]"):
@@ -254,6 +258,9 @@ def paragraphs(pages: list[list[dict]], body: float, pitch: float, right: float,
                 heading_like = lambda ln: len(ln["text"]) < 60 and ln["text"].isupper() and len(ln["text"].split()) <= 6 and sum(c.isalpha() for c in ln["text"]) >= 6
                 if kind == "p" and NUMBERED_ITEMS and re.match(r"\d{1,2}\.\s+\S", l["text"]):
                     new = True  # "19. …" opens a numbered item (book_meta.json "numbered_items": a typed-up compilation of quotations)
+                own = lambda ln: bool(HEADING_LINES) and re.sub(r"[^a-z0-9]", "", unicodedata.normalize("NFKD", ln["text"]).encode("ascii", "ignore").decode().lower()) in HEADING_LINES
+                if kind == "p" and (own(l) or own(lines[i - 1])):
+                    new = True
                 if kind == "p" and (heading_like(l) or heading_like(lines[i - 1])):
                     new = True
                 if margin is not None and kind == "p" and not new:

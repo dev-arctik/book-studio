@@ -16,7 +16,7 @@ NON_IAST_FIXES = str.maketrans({"î": "ī", "â": "ā", "û": "ū", "Î": "Ī", 
                                 "ņ": "ṇ", "Ņ": "Ṇ",
                                 "ș": "ṣ", "Ș": "Ṣ", "ă": "ā", "Ă": "Ā", "ț": "ṭ", "Ț": "Ṭ", "Ŗ": "Ṛ", "ŗ": "ṛ", "Ń": "Ṅ", "ń": "ṅ", "Ä": "Ā", "ä": "ā"})  # Romanian / Latin-Extended look-alikes of IAST letters
 # Characters the book font lacks: decorative list bullets (♦ ► ▪ ➤ □ …) become the standard bullet •
-BULLET_FIXES = str.maketrans({**{c: "•" for c in "♦►▪➤●■◆▸▶➢✓✔□⇒"}, "′": "'", "ˇ": ""})  # also: prime → apostrophe, stray caron speck removed
+BULLET_FIXES = str.maketrans({**{c: "•" for c in "♦►▪➤●■◆▸▶➢✓✔□⇒◦"}, "′": "'", "ˇ": ""})  # also: prime → apostrophe, stray caron speck removed
 TERMINAL_PUNCT = tuple('.!?"”’\')')
 WORD_RE = re.compile(r"\w+")  # \w covers diacritic letters (ā ṣ ṇ …) in Python 3
 PICTURE_LABELS = {"Picture", "Figure"}
@@ -28,6 +28,7 @@ INLINE_TAGS = r"(?:i|b|sup)"  # emphasis and footnote markers survive; every oth
 def clean_inline(html: str) -> str:
     """Keep only <i>/<b>/<sup> and line breaks; list items and table rows end their line; everything else becomes plain text."""
     html = html.translate(NON_IAST_FIXES).translate(BULLET_FIXES)
+    html = re.sub(r"[ऀ-ॿ]+", "", html)  # Devanagari (a Hindi column, a printed mantra): Gentium has none, so it would fall back to another font
     html = re.sub(r"[ঀ-৿]+", "", html)  # Bengali signs and captions inside photos: Gentium has no Bengali letters, so they would print as empty boxes
     html = html.replace("r̥", "ṛ").replace("R̥", "Ṛ")  # the reader sometimes puts a combining ring below instead of the dot (Kr̥ṣṇa, kr̥pā)
     html = re.sub(r"\b(K)r(ṣṇ)", r"\1ṛ\2", html)  # Krṣṇa / Krṣṇadāsa: the dot sits under the r in every IAST spelling

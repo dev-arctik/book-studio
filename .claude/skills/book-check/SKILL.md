@@ -101,3 +101,8 @@ Format: date — book — what looked wrong — how it was found — fix (meta k
 - 2026-11-06 — Vaiṣṇava-nindā — Parts held the book's text and a new rule emptied them (−33 % of the words) — same word-count comparison.
 - 2026-11-06 — all books with a right-aligned cite/signature — the paragraph after it was set small and grey over it — render a page with a cite; sign-detail only for short place/date lines.
 - 2026-11-06 — contents of every book — Foreword/Preface/Introduction were missing from contents and bookmarks — now listed by the template.
+- 2026-11-07 — Hari-bhakti-vilāsa ×5 — cover files named for the wrong volumes ("(10-12).png" is Volume 2) — looked at all cover images side by side against the scan's page 1 — never trust image file names; match title and volume by eye.
+- 2026-11-08 — Hari-bhakti-vilāsa 6-9 — Devanagari Hindi column fell back to another font (QA FAIL) and was published before QA ran — run `qa_book.py` BEFORE `publish_book.py` — Devanagari is stripped in `ocr_text`, empty table columns dropped.
+- 2026-11-08 — Hari-bhakti-vilāsa 1/5 — a "title | author" list read as titles then authors — looked at the last pages — `strip_text` for the author lines or `ocr_tables`.
+- 2026-11-08 — Riddha Dāsa, Tukarama, Panihati — ornament pictures with the heading inside, endpaper maps as extra pages, a running head printed as a heading — rendered the front pages — `drop_pictures`, `frontispiece_until`, `drop_headings`; set `no_topics` when the printed contents has none.
+- 2026-11-08 — Charu Vilas Vol 2, Demian Martins — "Śri Kṛṣṇa", "Śrila" left in digital books — text search of every published PDF (`chkall`) — `text_fixes`; run the text search on every batch, digital books included.
