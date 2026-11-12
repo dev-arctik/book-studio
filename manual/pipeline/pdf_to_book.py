@@ -492,6 +492,7 @@ def convert(book: str) -> None:
     pdf_text.DROP_FONTS = tuple(meta.get("drop_fonts", []))  # decoration set in its own font (a faded mantra behind the text)
     global BULLET_MIN_SIZE
     BULLET_MIN_SIZE = meta.get("bullet_min_size", 0)
+    pdf_text.GNP_FONTS = pdf_text.gnp_fonts(pdf)  # the BBT's old Macintosh fonts ("K®ß∫a"): their own stand-in table
     pdf_text.BALARAM_FONTS = balaram_fonts(pdf)  # fonts holding Balaram-style stand-in letters are decoded, whatever their name
     pdf_text.BALARAM_FONTS |= set(meta.get("balaram_fonts", []))  # a heading font with too few stand-in letters to be found by itself
     if meta.get("bold_paragraph_pages"):  # [first, last] scan pages of a glossary: each bold term opens an entry
@@ -541,6 +542,14 @@ def convert(book: str) -> None:
     # Per-book settings (book_meta.json): "drop_sections" — outline titles left out (a page-number index means nothing once the
     # book is reflowed); "skip_pages" — scan pages left out (the publisher's back cover)
     front_titles = {t.lower() for t in meta.get("front_sections", [])}
+    back_titles = {t.lower() for t in meta.get("back_sections", [])}
+    # a paragraph set smaller than the body (most of its letters at least 0.8 pt below it, but no table print)
+    def small_print(p):
+        sizes = Counter()
+        for r in p["runs"]:
+            if not r.get("break") and r["text"].strip():
+                sizes[round(r["size"], 1)] += len(r["text"].strip())
+        return bool(sizes) and TABLE_SIZE * body <= sizes.most_common(1)[0][0] <= body - 0.8
     skip_titles = SKIP_SECTIONS | {t.lower() for t in meta.get("drop_sections", [])}
     skip_pages = set(meta.get("skip_pages", []))
     paras = [p for p in paras if p["page"] + 1 not in skip_pages]
@@ -602,6 +611,8 @@ def convert(book: str) -> None:
         sec = {"subtitle": "", "cover": None, "numeral": "", "footnotes": [], "blocks": [], **section_of(title, page)}
         if title.lower() in front_titles:
             sec["kind"] = "front"  # book_meta.json "front_sections": titles that open the book (about the author, dedication, how to use it…)
+        if title.lower() in back_titles:
+            sec["kind"] = "back"  # book_meta.json "back_sections": a title that would open the book but closes this one ("Acknowledgments" at the end)
         if kind:
             sec["kind"] = kind
         if lead:
@@ -687,6 +698,8 @@ def convert(book: str) -> None:
                 sec["blocks"].append({"type": "quote", "lines": [re.sub(r"<[^>]+>", "", ln).strip() for ln in text.split("\n") if ln.strip()]})
             elif indent_band(p["x0"], margin, p.get("spaced")) == 2:
                 sec["blocks"].append({"type": "blockquote", "text": flat})
+            elif meta.get("small_quotes") and small_print(p):
+                sec["blocks"].append({"type": "blockquote", "text": flat})  # "small_quotes": a quotation set a size smaller than the body, hardly indented (The Qualities of Śrī Kṛṣṇa)
             else:
                 sec["blocks"].append({"type": "p", "text": flat})
         if meta.get("no_title_block") and sec["blocks"][:1] and sec["blocks"][0]["type"] == "h":

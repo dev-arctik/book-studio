@@ -310,6 +310,9 @@ def copyright_page(book: str, first_page: int, strip: list = (), only_page: int 
     if not pages:
         import pymupdf
         with pymupdf.open(local_env.find_book(book)) as pdf:
+            import pdf_text  # (its stand-in fonts are found per book, as pdf_to_book does, so a copyright page in "K®ß∫a" letters is decoded too)
+            pdf_text.GNP_FONTS = pdf_text.gnp_fonts(pdf)
+            pdf_text.BALARAM_FONTS = pdf_text.balaram_fonts(pdf)
             # decoded like the book's text; the page named in "copyright_page" counts too, even after the first section (Chaurasi-kosa's, behind its dedication)
             pages = [(n + 1, page_blocks_text(pdf[n])) for n in range(len(pdf)) if n + 1 < first_page or n + 1 == only_page]
     best, best_hits = None, 1

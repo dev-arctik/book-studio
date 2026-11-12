@@ -34,6 +34,24 @@ def balaram_fonts(pdf) -> set[str]:
             for ln in block.get("lines", []):
                 for s in ln["spans"]:
                     seen[s["font"]] += len(re.findall(r"[åëñçÅËÑÇ]", s["text"]))
+    return {font for font, n in seen.items() if n >= 20} - gnp_fonts(pdf)
+
+
+# A second stand-in table, of the BBT's old Macintosh fonts ("GNP-NewJanson": The Qualities of Śrī Kṛṣṇa prints Kṛṣṇa as "K®ß∫a",
+# Śrīla Prabhupāda as "Ûrîla Prabhupåda") — here å is ā, not Balaram's ṛ
+GNP = str.maketrans({"å": "ā", "Å": "Ā", "∫": "ṇ", "ß": "ṣ", "®": "ṛ", "‰": "ṛ", "Â": "Ṛ", "î": "ī", "È": "Ī", "ç": "ś", "Ç": "Ś", "Û": "Ś",
+                     "ü": "ū", "µ": "ṁ", "†": "ṭ", "Ê": "Ṭ", "∂": "ḍ", "˙": "ḥ", "õ": "ṅ"})
+GNP_FONTS: set[str] = set()  # fonts of this book with GNP's stand-ins, set by pdf_to_book via gnp_fonts()
+
+
+def gnp_fonts(pdf) -> set[str]:
+    """Fonts whose text is full of ® ß ∫ (Kṛṣṇa's three letters in the GNP fonts): they hold GNP stand-ins, whatever the font is called."""
+    seen = Counter()
+    for page in pdf:
+        for block in page.get_text("dict")["blocks"]:
+            for ln in block.get("lines", []):
+                for s in ln["spans"]:
+                    seen[s["font"]] += len(re.findall(r"[®ß∫]", s["text"]))
     return {font for font, n in seen.items() if n >= 20}
 
 
@@ -54,6 +72,8 @@ def span_text(span: dict) -> str:
         text = unicodedata.normalize("NFC", text.replace("̅", "̄"))
     # "Gaudiya" (Gaudiya Press / Tattva Vicara books) uses the very same stand-in letters as "Balaram"; so does any font found by
     # balaram_fonts() (ScaGoudy, TimesLTMM…), which pdf_to_book sets per book
+    if span["font"] in GNP_FONTS:
+        return text.translate(GNP)
     return text.translate(BALARAM) if span["font"].startswith(("Balaram", "Gaudiya")) or span["font"] in BALARAM_FONTS else text
 
 
@@ -167,6 +187,7 @@ def page_lines(page) -> list[dict]:
     """Every text line on a page with its spans; page numbers, running heads and blank lines left out."""
     lines = []
     spaced = None  # visible_starts(page), read only when a line opens with spaces
+    top_numbers = []  # baselines of page numbers in the top band
     for block in page.get_text("dict")["blocks"]:
         for ln in merge_pieces(block.get("lines", [])):
             if is_bullet_line(ln):
@@ -175,6 +196,8 @@ def page_lines(page) -> list[dict]:
                       "bold": bool(s["flags"] & 16) or "Bold" in s["font"], "italic": bool(s["flags"] & 2) or "Italic" in s["font"]}
                      for s in ln["spans"] if not s["font"].startswith("Type3") and not s["font"].startswith(DROP_FONTS)]  # Type3 = the Hindi PDF's page-number font
             text = "".join(s["text"] for s in spans).strip()
+            if re.fullmatch(r"\d{1,3}|[IVXLCivxlc]{1,6}", text) and ln["bbox"][1] < TOP_BAND * page.rect.height:
+                top_numbers.append(ln["bbox"][1])  # (a page number at the top: the running head on its baseline goes too, even if "drop_lines" takes the number)
             if not text or (re.fullmatch(r"\d{1,3}|[IVXLCivxlc]{1,6}", text) and ln["bbox"][1] > PAGE_NUMBER_BAND * page.rect.height):
                 continue
             if any(re.search(rx, text) for rx in DROP_LINES):
@@ -209,6 +232,9 @@ def page_lines(page) -> list[dict]:
         l["vis_x0"] = l["x0"]  # (kept: text wrapped beside a picture is measured from the picture's edge in pdf_to_book.page_items)
         if l["spaced"] and abs(l["box_x0"] - left) > 3:
             l["x0"], l["spaced"] = l["box_x0"], False
+    # A running head sits on the same baseline as a page number in the top band ("Strong" + "15"): both go, however rarely the head repeats
+    if top_numbers:
+        lines = [l for l in lines if not (l["y"] < TOP_BAND * page.rect.height and any(abs(l["y"] - y) < 3 for y in top_numbers))]
     return sorted(lines, key=lambda l: l["y"])
 
 
