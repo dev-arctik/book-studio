@@ -89,19 +89,22 @@ _given: dict[str, Path] = {}  # books given by path in this run, by name — lat
 
 
 def book_path(arg: str) -> Path:
-    """The book named on the command line: must be a path to its PDF. Its file name (without .pdf) is the book's key in
-    output/ and book_meta.json."""
+    """The book named on the command line: must be a path to its PDF — or to an EPUB we made ourselves, when that is all that is left of a
+    book (epub_to_book.py reads it back). Its file name (without .pdf/.epub) is the book's key in output/ and book_meta.json."""
     path = Path(arg).expanduser()
-    if path.suffix.lower() != ".pdf" or not path.is_file():
+    if path.suffix.lower() not in SOURCE_KINDS or not path.is_file():
         sys.exit(f"Not a PDF file: {arg}\nGive the path of the book's PDF.\n{USAGE}")
     path = path.resolve()
     _given[path.stem] = path
     return path
 
 
+SOURCE_KINDS = (".pdf", ".epub")
+
+
 def find_book(name: str) -> Path:
     """A book's PDF by its key: the path given on the command line in this run, else books/<name>.pdf in the library."""
-    if Path(name).suffix.lower() == ".pdf" and Path(name).is_file():
+    if Path(name).suffix.lower() in SOURCE_KINDS and Path(name).is_file():
         return book_path(name)
     key = name[:-4] if name.endswith(".pdf") else name
     if key in _given:

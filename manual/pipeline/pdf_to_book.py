@@ -83,6 +83,34 @@ def page_items(page, body: float, margin: float) -> list[dict]:
     """A page's text lines in reading order, with its pictures and tables placed among them as objects."""
     lines = page_lines(page)
     w, h = page.rect.width, page.rect.height
+    # Text wrapped beside a picture (a map at the left, lines starting at its right edge): measured from the picture's edge, so a wrapped
+    # line reads as a full line of its paragraph — not as an indented block that splits the paragraph in two (Chaurasi-kosa's maps)
+    # (any real image counts here, also a small map under the figure size: 135×113 pt beside a paragraph — not an icon or a speck)
+    pictures = [r for r in (pymupdf.Rect(b["bbox"]) for b in page.get_text("dict")["blocks"] if b["type"] == 1) if min(r.width, r.height) >= 40 and r.get_area() >= 0.01 * w * h]
+    beside_any = set()
+    for r in pictures:
+        overlaps = lambda l: l["y"] < r.y1 - 2 and l["y"] + l["size"] > r.y0 + 2  # noqa: E731
+        left = [l for l in lines if overlaps(l) and l["x0"] >= r.x1 - 2 and r.x0 < margin + 20]
+        right = [l for l in lines if overlaps(l) and l["x1"] <= r.x0 + 2 and r.x1 > w - margin - 20]
+        if left:
+            for l in left:  # a typed indent beside the picture counts from the picture's edge (its box starts there, not at the body's start)
+                l["x0"], l["spaced"] = l.get("vis_x0", l["x0"]), l.get("vis_x0", l["x0"]) > l.get("box_x0", l["x0"]) + 1
+            base = min(l.get("box_x0", l["x0"]) for l in left)
+            # the wrap may start a line above the picture's top edge ("Sarasvatī’s Ṭhākura’s highly" over a photo set a little lower): same indent, within a line
+            left += [l for l in lines if not any(l is x for x in left) and abs(l["x0"] - base) < 2 and 0 < r.y0 - l["y"] <= 1.6 * l["size"]]
+            for l in left:
+                l["x0"] = margin + (l["x0"] - base)  # (a first-line indent beside the picture stays an indent)
+            # a paragraph may open right where the wrap starts, with no indent: the line above ends a sentence, the first wrapped line opens with a capital
+            first = min(left, key=lambda l: l["y"])
+            above = [l for l in lines if l["y"] < first["y"] - 1]
+            if above and re.search(r"[.!?”\"’]\s*$", max(above, key=lambda l: l["y"])["text"]) and first["text"][:1].isupper():
+                first["para_start"] = True
+        if right:
+            others = [l["x1"] for l in lines if not any(l is x for x in right)]
+            for l in right:
+                l["x1"] = max(others) if others else l["x1"]  # (not a short line: no deliberate break after it)
+        if left or right:
+            beside_any.add((round(r.x0), round(r.y0)))
     # A decorated initial ("W" set large) belongs at the start of the line beside it ("HEN I FIRST JOINED…"); that first line,
     # set in small capitals, is body text
     for drop in [l for l in lines if len(l["text"].strip()) <= 2 and l["text"].strip()[-1:].isalpha() and l["size"] >= 2 * body]:  # "“T" counts: an opening quote can come with the cap
@@ -161,7 +189,8 @@ def page_items(page, body: float, margin: float) -> list[dict]:
             same = [o for o in items if "object" in o and o["object"]["type"] == "figure" and abs(o["object"]["bbox"][0] - x0) < 4 and abs(o["object"]["bbox"][1] - y0) < 4]
             if same:
                 continue
-            items.append({"object": {"type": "figure", "page": page.number + 1, "bbox": [x0, y0, x1, y1], "image_bbox": [0, 0, w, h], "caption": ""}, "y": y0})
+            items.append({"object": {"type": "figure", "page": page.number + 1, "bbox": [x0, y0, x1, y1], "image_bbox": [0, 0, w, h], "caption": "",
+                                     "beside": (round(x0), round(b["bbox"][1])) in beside_any}, "y": y0})  # (beside: text wraps round it — placed after its paragraph)
     return sorted(items, key=lambda l: l["y"])
 
 
@@ -187,7 +216,7 @@ def section_of(title: str, page: int) -> dict:
     """Kind and display title from an outline entry: "1: Foundations: …" is chapter 1; Foreword/Introduction/Dedication are front matter."""
     if m := re.match(r"^(\d+)\s*:\s*(.+)$", title):
         return {"kind": "chapter", "title": m.group(2).strip(), "start_page": page}
-    if m := re.match(r"^(Part \w+)\s*:\s*(.+)$", title):
+    if m := re.match(r"^(Part \w+(?:-\w+)?)\s*:\s*(.+)$", title):  # (also "Part Twenty-One: …")
         return {"kind": "part", "title": m.group(1), "subtitle": m.group(2).strip(), "start_page": page}  # "Part One: Pūrva-campū — …": a part title page (book_meta.json sections)
     first = title.split(":")[0].split("&")[0].strip().lower()
     kind = "front" if first in ("foreword", "introduction", "dedication", "preface", "acknowledgements", "acknowledgments", "maṅgalācaraṇa") else "back"
@@ -196,6 +225,15 @@ def section_of(title: str, page: int) -> dict:
 
 LABEL_RE = re.compile(r"^chapter\s+[\w-]+$", re.I)  # "Chapter One": a label that has its own outline entry before the real title
 FRONT_LABELS = ("foreword", "introduction", "preface")
+
+
+def part_of_title(text: str, title: str) -> bool:
+    """A title-block line that is no subtitle: a bare chapter number ("2"), or a piece of the title itself, even spelled a little differently
+    ("Sarvatra Prachar" / "Preaching" under "Sarvatra Pracāra — The Worldwide Preaching")."""
+    t, whole = ascii_key(text), ascii_key(title)
+    if not t or t.isdigit():
+        return True
+    return difflib.SequenceMatcher(None, t, whole).find_longest_match(0, len(t), 0, len(whole)).size >= 0.8 * len(t)
 
 
 def clean_outline(entries: list[tuple[str, int]]) -> list[tuple[str, int, str, str]]:
@@ -225,19 +263,194 @@ def clean_outline(entries: list[tuple[str, int]]) -> list[tuple[str, int, str, s
 
 
 def join_cut_paragraphs(blocks: list[dict]) -> list[dict]:
-    """A plain paragraph that opens lowercase joins the earlier plain paragraph that stopped mid-sentence (pictures and tables between them do not matter)."""
+    """A plain paragraph that opens lowercase joins the earlier plain paragraph that stopped mid-sentence (pictures and tables between them do not matter).
+    Read on the text without its tags ("<b>accompanying Him…" opens lowercase too); a "]" ends a paragraph only when it closes a "[source]";
+    and a paragraph that stops on a word no sentence ends with ("…From Vrindavana first go to" / "Chhatikara & turn…") is continued by the next, whatever its case."""
+    plain = lambda t: re.sub(r"<[^>]+>", "", t or "").strip()  # noqa: E731
     joined, last_p = [], None
     for blk in blocks:
-        if (blk["type"] == "p" and last_p is not None and blk["text"][:1].islower() and not re.search(r"[.!?:;”’)\]>]\s*$", last_p["text"])
-                and not re.match(r"(?:<i>)?[^\s—–<]{1,30}(?:[ -][^\s—–<]{1,30}){0,3}(?:</i>)?\s?[—–]\s", blk["text"])):  # a glossary entry ("term – meaning") is a new paragraph, not a continuation
+        prev, text = plain(last_p["text"]) if last_p else "", plain(blk.get("text"))
+        unfinished = bool(prev) and not re.search(r"[.!?:;”’)>]\s*$", prev) and not (prev.endswith("]") and prev.startswith("["))
+        bold_only = last_p is not None and re.fullmatch(r"\s*<b>[^<]*</b>\s*", last_p["text"]) and len(prev) <= 60  # (a short bold label of its own is a heading, never continued — a bold translation line is not)
+        # (a whole word after a space: in "śrī-caraṇa" with a combining dot below the n, "\b" would see a word "a" — a verse glued to its translation)
+        dangling = re.search(r"(?:^|\s)(of|to|the|a|an|and|or|from|at|with|on|for|by|in|into|onto|as|than|via|past|after|before|behind|near|opposite|beside|between|towards?)$", unicodedata.normalize("NFC", prev))
+        # An inset block is continued only as English prose (a quotation cut by a page turn): a verse set line by line ("avatirno bhavisyami…",
+        # "hari he! dharma-nista…") holds no "the/and/of", and a capital label ("TEXTS 1-3") opens its verse, so neither is run together
+        english = lambda t: len(re.findall(r"\b(?:the|and|of|is|are|that|which|was|were|with|to|in|on|for|not|a|an|i|he|she|his|her|it|you|we|they|my|me|be|by|as|have|had|should|would|this|from)\b", t.lower())) >= 2  # noqa: E731
+        inset_ok = "blockquote" not in (blk["type"], last_p["type"] if last_p else "") or (english(prev) and english(text) and prev != prev.upper())
+        # (nor a verse line set in italics — "mage va na mage keha…" under a byline — nor a short poem line ending on "the": "You, Prabhupada are the" / "Warmth…")
+        verse = lambda b: re.fullmatch(r"\s*<i>.*</i>\s*", b.get("text") or "", re.S) and not english(plain(b["text"]))  # noqa: E731
+        inset_ok = inset_ok and not (last_p is not None and (verse(last_p) or verse(blk)))
+        dangling = dangling if len(prev) >= 60 else None
+        if (blk["type"] in ("p", "blockquote") and last_p is not None and unfinished and not bold_only and inset_ok and (text[:1].islower() or (dangling and text[:1].isupper()))
+                and not re.match(r"(?:<i>)?[^\s—–<.!?]{1,30}(?:[ -][^\s—–<.!?]{1,30}){0,3}(?:</i>)?\s?[—–]\s", blk["text"])):  # a glossary entry ("term – meaning") is a new paragraph, not a continuation — a term holds no sentence end ("chemistry. So okay — nitrogen…" continues)
+            # The longer part decides the type: a drop cap's inset first lines + their paragraph is a paragraph; a quotation cut by a page
+            # turn ("…established Himself as the Supreme Personality" / "of Godhead by His various activities…") stays a quotation
+            if blk["type"] != last_p["type"] and len(plain(blk["text"])) > len(prev):
+                last_p["type"] = blk["type"]
             last_p["text"] += " " + blk["text"]
             continue
         joined.append(blk)
-        if blk["type"] == "p":
+        if blk["type"] in ("p", "blockquote"):
             last_p = blk
         elif blk["type"] not in ("figure", "table"):
             last_p = None
     return joined
+
+
+def line_settings(sections: list[dict], meta: dict) -> None:
+    """Per-book settings that cut, retype or realign whole paragraphs (also used by epub_to_book.py):
+    "split_before" [regex, …] on a block's text with its tags — a paragraph is cut before each match (a list run on in one paragraph:
+    "<b>1</b>. To have … <b>2</b>. To think …"; a signature's second line: "Vrindavana Dhama, Kartika");
+    "heading_patterns" [regex, …] — a paragraph whose whole text matches is a subheading (as in the OCR route);
+    "right_lines" [text, …] — paragraphs set right-aligned like a signature (as in the OCR route; before a dedication is tidied);
+    "normal_case_openings": true — a section's opening words printed in capitals ("IN AUGUST 1970, AFTER FIVE YEARS in…") in normal case."""
+    plain = lambda t: re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", t or "")).strip()  # noqa: E731
+    for rx in [re.compile(p) for p in meta.get("split_before", [])]:
+        hits = 0
+        for sec in sections:
+            out = []
+            for b in sec["blocks"]:
+                cuts = [m.start() for m in rx.finditer(b.get("text") or "") if m.start() > 0] if b["type"] in ("p", "blockquote") else []
+                if not cuts:
+                    out.append(b)
+                    continue
+                for a, z in zip([0] + cuts, cuts + [None]):
+                    out.append({**b, "text": b["text"][a:z].strip()})
+                hits += len(cuts)
+            sec["blocks"] = out
+        print(f"split before {rx.pattern!r}: {hits}" if hits else f"WARNING: split_before {rx.pattern!r} matched nothing")
+    for rx in [re.compile(p) for p in meta.get("heading_patterns", [])]:
+        hits = 0
+        for sec in sections:
+            for i, b in enumerate(sec["blocks"]):
+                if b["type"] in ("p", "blockquote") and rx.fullmatch(plain(b["text"])):
+                    sec["blocks"][i], hits = {"type": "h", "text": plain(b["text"])}, hits + 1
+        print(f"heading pattern {rx.pattern!r}: {hits}" if hits else f"WARNING: heading pattern {rx.pattern!r} matched nothing")
+    right, matched = set(meta.get("right_lines", [])), set()
+    for sec in sections:
+        for b in sec["blocks"]:
+            if b["type"] in ("p", "blockquote") and plain(b["text"]) in right:
+                b["type"] = "cite"  # (every such line: "—A. C. Bhaktivedanta Swami" closes dozens of quotations)
+                matched.add(plain(b["text"]))
+    for line in right - matched:
+        print(f"WARNING: right_lines {line!r} matched nothing")
+    # "verse_lines": ["line one / line two / …", …] — a verse run into its paragraph ("kṛṣṇa tvadīya-… kutas te "My Lord Kṛṣṇa…"): set apart as
+    # its lines, the rest of the paragraph after it (an older build lost the verse's line breaks)
+    for verse in meta.get("verse_lines", []):
+        lines = [l.strip() for l in verse.split(" / ")]
+        joined, hits = " ".join(lines), 0
+        for sec in sections:
+            out = []
+            for b in sec["blocks"]:
+                given = [plain(l) for l in b.get("lines") or []]
+                if b["type"] in ("quote", "centred") and " ".join(given).startswith(joined):
+                    # a verse block that is one long line, or that holds its source and translation too ("[Bg 3.21]", "Whatever action…")
+                    k = next((n for n in range(1, len(given) + 1) if len(" ".join(given[:n])) >= len(joined)), len(given))
+                    rest = " ".join(b["lines"][k:]).strip()
+                    out += [{"type": "quote", "lines": lines}] + ([{"type": "p", "text": rest}] if rest else [])
+                    hits += 1
+                elif b["type"] in ("p", "blockquote") and plain(b["text"]).startswith(joined):
+                    rest = b["text"][b["text"].index(lines[-1]) + len(lines[-1]):].strip() if lines[-1] in b["text"] else ""
+                    rest = re.sub(r"^(?:</[ib]>\s*)+", "", rest)  # (the verse's own italics close here)
+                    out += [{"type": "quote", "lines": lines}] + ([{**b, "type": "p", "text": rest}] if rest else [])  # (its translation: a paragraph below it)
+                    hits += 1
+                else:
+                    out.append(b)
+            sec["blocks"] = out
+        print(f"verse {lines[0]!r}…: {hits}" if hits else f"WARNING: verse_lines {lines[0]!r} matched nothing")
+    if meta.get("normal_case_openings"):
+        normal_case_openings(sections, meta["normal_case_openings"])
+
+
+def strip_text(sections: list[dict], patterns: list[str]) -> None:
+    """"strip_text" [regex, …] (as in the OCR route): matches are taken out of every block's text, caption and lines — a decorative border
+    an older build read as text ("HARE KRSNA HARE KRSNA… •" round every page of Without Fear); a block left empty is dropped, so the
+    paragraph it cut can be joined again."""
+    rxs = [re.compile(p) for p in patterns]
+    plain = lambda t: re.sub(r"<[^>]+>", "", t or "").strip()  # noqa: E731
+    clean = lambda t: re.sub(r"<(\w+)>\s*</\1>", "", re.sub(r"\s{2,}", " ", t)).strip()  # noqa: E731
+    hits = Counter()
+    for sec in sections:
+        kept = []
+        for b in sec["blocks"]:
+            for key in ("text", "caption"):
+                if isinstance(b.get(key), str):
+                    for rx in rxs:
+                        b[key], n = rx.subn(" ", b[key])
+                        hits[rx.pattern] += n
+                    b[key] = clean(b[key])
+            if isinstance(b.get("lines"), list):
+                lines = b["lines"]
+                for rx in rxs:
+                    lines = [rx.sub(" ", line) for line in lines]
+                b["lines"] = [clean(line) for line in lines if plain(clean(line))]
+            if b["type"] != "figure" and not plain(b.get("text")) and not b.get("lines") and b["type"] not in ("break", "notes-h", "table"):
+                continue
+            kept.append(b)
+        sec["blocks"] = kept
+    for p in patterns:
+        print(f"strip {p!r}: {hits[p]}" if hits[p] else f"WARNING: strip_text {p!r} matched nothing")
+
+
+def normal_case_openings(sections: list[dict], mode=True) -> None:
+    """The book's small capitals at a section's opening, read as capitals ("IN AUGUST 1970, AFTER FIVE YEARS in the United States",
+    "<b>Ś</b>RĪLA PRABHUPĀDA MET WITH THE…"): each word gets the casing the book itself uses most for it elsewhere ("August", "Śrīla
+    Prabhupāda", "ISKCON", "in"), the first word a capital initial, and a bold drop-cap letter joins its word. Only a run of 2+ capital
+    words followed by the paragraph's own text is touched — never a whole capital line, nor a label ending in a colon ("LEFTHAND PAGE:")."""
+    seg_re = r"[^\W\d_]+"  # a run of letters: "PRABHUPĀDA'S" and "NĀMA-SAṄKĪRTANA" are recased part by part
+    untag = lambda t: re.sub(r"<[^>]+>", "", t or "")  # noqa: E731
+    usage: dict[str, Counter] = {}
+    capitals = Counter()  # words the book prints in capitals inside lowercase text (ISKCON, BBT) — not in a capital line ("END OF APPENDIX II")
+    for sec in sections:
+        for b in sec["blocks"]:
+            if b["type"] == "h":
+                continue  # (headings are title-cased: "Sixteen Rounds" says nothing about "sixteen")
+            text = re.sub(r"<[^>]+>", " ", b.get("text") or "")
+            segs = list(re.finditer(seg_re, text))
+            for k, m in enumerate(segs):
+                w = m.group()
+                if w.isupper() and len(w) > 1:
+                    near = [segs[j].group() for j in (k - 1, k + 1) if 0 <= j < len(segs)]
+                    if near and all(not n.isupper() for n in near):
+                        capitals[w.lower()] += 1
+                elif not w.isupper() and not re.search(r"(^|[.!?:;“\"‘—]\s*)$", text[:m.start()]):  # (a sentence's first word is capitalised anyway)
+                    usage.setdefault(w.lower(), Counter())[w] += 1
+    def recase_seg(seg: str) -> str:
+        if not seg.isupper() or seg == "I":
+            return seg
+        seen = usage.get(seg.lower(), Counter())
+        if capitals[seg.lower()] >= 2 and capitals[seg.lower()] > 3 * sum(seen.values()):
+            return seg  # an acronym the book prints in capitals ("When I joined ISKCON in 1971")
+        if seen:
+            return seen.most_common(1)[0][0]
+        return seg[:1] + seg[1:].lower() if any(ord(c) > 127 for c in seg) else seg.lower()  # (unseen: a Sanskrit name keeps its capital)
+    def recase(word: str, first: bool) -> str:
+        out = re.sub(seg_re, lambda m: recase_seg(m.group()), word)  # (letters inside tags are lowercase, so tags pass unchanged)
+        if first:
+            out = re.sub(r"(?<![<\w/])([^\W\d_])", lambda m: m.group(1).upper(), out, count=1)
+        return out
+    capital = lambda w: any(c.isalpha() for c in untag(w)) and untag(w) == untag(w).upper()  # noqa: E731  (an italic word inside the run counts too)
+    hits = 0
+    # "normal_case_openings": "all" — also every later paragraph or quotation that opens the same way (Without Fear sets each quoted passage so)
+    every = mode == "all"
+    targets = [x for sec in sections for x in sec["blocks"] if x["type"] in ("p", "blockquote")] if every else \
+              [b for b in (next((x for x in sec["blocks"] if x["type"] == "p"), None) for sec in sections) if b]
+    for b in targets:
+        if every and re.match(r"(?:<[^>]+>)*END OF\b", b["text"]):
+            continue  # a printed end marker ("END OF APPENDIX II"), set in capitals on purpose
+        lead = re.match(r"(?:<(?!b>\w</b>)[^>]+>)*[“\"‘']?", b["text"])[0]  # (opening tags and quote — not a drop cap's own <b>)
+        body = re.sub(r"^<b>(\w)</b>(?=[^\W\d_])", r"\1", b["text"][len(lead):])  # (a bold drop cap: "<b>W</b>HEN" is "WHEN")
+        tokens = body.split(" ")
+        run = 0
+        while run < len(tokens) and (capital(tokens[run]) or not any(c.isalpha() for c in untag(tokens[run]))):
+            run += 1
+        letters_words = [w for w in tokens[:run] if sum(c.isalpha() for c in untag(w)) >= 2]  # (initials "A. C." are no capital run)
+        if len(letters_words) < 2 or run >= len(tokens) or tokens[run - 1].endswith(":"):
+            continue
+        b["text"] = lead + " ".join([recase(w, k == 0) for k, w in enumerate(tokens[:run])] + tokens[run:])
+        hits += 1
+    print(f"normal-case openings: {hits}")
 
 
 def apply_fixes(sections: list[dict], meta: dict) -> None:
@@ -252,6 +465,8 @@ def apply_fixes(sections: list[dict], meta: dict) -> None:
         hits = 0
         for sec in sections:
             sec["title"] = rx.sub(right_text, sec["title"])
+            sec["subtitle"], n = rx.subn(right_text, sec.get("subtitle") or "")
+            hits += n
             for blk in sec["blocks"]:
                 for key in ("text", "caption"):
                     if isinstance(blk.get(key), str):
@@ -313,7 +528,9 @@ def convert(book: str) -> None:
     first_lines = [x for x in starts if indent_band(x, margin) == 1]
     # The usual first-line indent; a book with none separates paragraphs by a gap, so the gaps alone split it
     indent = max(first_lines, key=lambda x: starts[x]) if first_lines else None
-    paras = paragraphs([page_items(p, body, margin) for p in pdf], body, pitch, right, margin if indent is not None else None, indent)
+    # A skipped page reads as empty, so no text on the next page is glued onto one of its paragraphs and lost with it (an epigraph after a printed contents)
+    skipped = set(meta.get("skip_pages", []))
+    paras = paragraphs([page_items(p, body, margin) if i + 1 not in skipped else [] for i, p in enumerate(pdf)], body, pitch, right, margin if indent is not None else None, indent)
 
     # Per-book settings (book_meta.json): "drop_sections" — outline titles left out (a page-number index means nothing once the
     # book is reflowed); "skip_pages" — scan pages left out (the publisher's back cover)
@@ -336,10 +553,27 @@ def convert(book: str) -> None:
     paras = [p for p in paras if not (p["kind"] == "object" and p["object"]["type"] == "figure" and words[p["page"]] >= 40 and page_sized(p) and p["page"] + 1 not in picture_pages)]
     if picture_pages:
         paras = [p for p in paras if p["page"] + 1 not in picture_pages]
+
+        def ink_box(page):
+            """The text and drawings of a text-only page (its page number left out), or None."""
+            ink = [pymupdf.Rect(b[:4]) for b in page.get_text("blocks") if b[4].strip() and not re.fullmatch(r"\s*\d+\s*", b[4])] + [d["rect"] for d in page.get_drawings()]
+            if page.get_images() or not ink:
+                return None
+            r = ink[0]
+            for x in ink[1:]:
+                r |= x
+            return r
+        inks = {pg: ink_box(pdf[pg - 1]) for pg in picture_pages}
+        # One text column for all of them, so every such page prints at the same scale (a page of five short lines is not blown up to giant type)
+        column = [min(r.x0 for r in inks.values() if r), max(r.x1 for r in inks.values() if r)] if any(inks.values()) else None
         for pg in picture_pages:
-            w, h = pdf[pg - 1].rect.width, pdf[pg - 1].rect.height
+            page = pdf[pg - 1]
+            w, h = page.rect.width, page.rect.height
+            box, exact = [0, 0, w, h], False
+            if r := inks[pg]:  # a text-only page (a list in a script Gentium lacks): cropped to its text, or a Letter page prints at 6 pt on A5
+                box, exact = [max(0, column[0] - 12), max(0, r.y0 - 12), min(w, column[1] + 12), min(h, r.y1 + 12)], True
             paras.append({"kind": "object", "runs": [], "text": "", "page": pg - 1, "object": {
-                "type": "figure", "page": pg, "bbox": [0, 0, w, h], "image_bbox": [0, 0, w, h], "caption": "", "wide": True}})
+                "type": "figure", "page": pg, "bbox": box, "image_bbox": [0, 0, w, h], "caption": "", "wide": True, "exact": exact}})  # (exact: the crop is kept as is, no margin trim)
         paras.sort(key=lambda p: p["page"])  # a stable sort: the order within a page is kept
 
     sections = []
@@ -367,17 +601,19 @@ def convert(book: str) -> None:
         # (a label line set a little larger than the body — "Chapter Three", "Part 1" — belongs to that block too)
         # — but only when it is centred, like the title block (a left-aligned enlarged line is a heading inside the chapter)
         centre = pdf[0].rect.width / 2
-        enlarged = lambda p: (sec["kind"] != "front" and p["kind"] == "p" and abs((p["x0"] + p.get("x1", 0)) / 2 - centre) < 8 and p["runs"]  # noqa: E731
+        # (a title block is a few short lines: a longer centred paragraph — an epigraph, a chapter's introduction — is text, and ends the block)
+        enlarged = lambda p: (sec["kind"] != "front" and p["kind"] == "p" and len(p["text"].split()) <= 20 and abs((p["x0"] + p.get("x1", 0)) / 2 - centre) < 8 and p["runs"]  # noqa: E731
                               and all(r.get("break") or not r["text"].strip() or r["size"] >= body + 0.9 for r in p["runs"]))
         if cuts and markers[i] and mine and mine[0]["text"].strip() == markers[i]:
             mine.pop(0)  # the heading line that opens the section repeats its title
         popped = []
         centred_title = lambda p: bool(meta.get("centred_title_block")) and p["kind"] == "object" and p["object"]["type"] == "centred" and sec["kind"] == "chapter"  # noqa: E731  (a chapter whose label and title are centred line objects)
-        while not meta.get("no_title_block") and mine and (mine[0]["kind"] not in ("p", "object") or enlarged(mine[0]) or centred_title(mine[0])):  # "no_title_block": chapters start straight with their first story, no title page
+        short = lambda p: len((p.get("text") or "").split()) <= 20 and not re.match(r"\d+\.(?:[\s​]|$)", (p.get("text") or "").strip())  # noqa: E731  (a boxed quotation above the chapter label is text, not part of the title; nor is the first numbered story, "1." + its title)
+        while not meta.get("no_title_block") and mine and short(mine[0]) and (mine[0]["kind"] not in ("p", "object") or enlarged(mine[0]) or centred_title(mine[0])):  # "no_title_block": chapters start straight with their first story, no title page
             head = mine.pop(0)
             popped.append(re.sub(r"\s+", " ", " ".join(re.sub(r"<[^>]+>", "", l) for l in head["object"]["lines"]) if head["kind"] == "object" else " ".join(r["text"].strip() for r in head["runs"] if not r.get("break"))).strip())
             author = " ".join(r["text"].strip() for r in head["runs"] if not r.get("break") and r.get("italic") and r["text"].strip())
-            if author:
+            if author and not part_of_title(author, sec["title"]):  # (an italic title's own lines are not its author)
                 sec["subtitle"] = re.sub(r"\s+", " ", author)
         popped = [re.sub(r"(?<=\w) ’ (?=\w)", "’", re.sub(r"“ | ”", lambda m: m.group().strip(), p)).replace(" – ", "–") for p in popped]  # Word's loose spacing around quotes and dashes
         dated = next((j for j, p in enumerate(popped) if j >= 2 and re.search(r"\b(1[89]\d\d|20\d\d)\b|\d0’?s\b", p)), None)
@@ -386,9 +622,16 @@ def convert(book: str) -> None:
             sec["blocks"] += [{"type": "h", "text": p} for p in popped[dated + 1:]]  # lines after the place and date open the chapter's text
         elif not sec["subtitle"] and len(popped) >= 3:  # "Chapter One" / "Nāma-Aparādha" / "The Ten Offences…": the last line is the subtitle
             last = popped[-1]
-            same_as_title = re.sub(r"\W", "", last.lower()) == re.sub(r"\W", "", sec["title"].lower())
+            same_as_title = part_of_title(last, sec["title"])  # (or the title's own last line: "…The Worldwide / Preaching", or a bare chapter number)
             if last and not same_as_title and not LABEL_RE.match(last) and not re.fullmatch(r"part\s+\w+", last, re.I):
                 sec["subtitle"] = last
+        if not (popped and re.fullmatch(r"chapter\s+\d+", popped[0], re.I) and dated):
+            # A title-block line that became neither the title, a label nor the subtitle is the first heading of the text, never dropped
+            # ("Appendix" opening with "Śrīla Prabhupāda - The Founder Acharya")
+            sub = ascii_key(sec.get("subtitle") or "")
+            unlabelled = lambda p: re.sub(r"^(chapter|part)\s+[\w-]+[\s:.]+", "", p, flags=re.I)  # noqa: E731  ("CHAPTER TWO Ontology" is the title again)
+            sec["blocks"] += [{"type": "h", "text": p} for p in popped if p and not part_of_title(unlabelled(p), sec["title"]) and not LABEL_RE.match(p)
+                              and not re.fullmatch(r"part\s+\w+(?:-\w+)?", p, re.I) and not (sub and (sub in ascii_key(p) or part_of_title(p, sec["subtitle"])))]
         drop = ""
         for p in mine:
             if p["kind"] == "object":
@@ -420,16 +663,18 @@ def convert(book: str) -> None:
                 sec["blocks"].append({"type": "entry", "text": flat})
                 continue
             bold_heading = bool(meta.get("bold_headings")) and p["kind"] == "p" and 2 < len(p["text"]) < 90 and bool(words) and all(r["bold"] for r in words) and not p["text"].rstrip().endswith((".", ",", ";"))  # a bold line at body size is a subheading (opt-in: Rosen's Milwaukee to Mayapur)
-            if p["kind"] != "p" or caps_heading or bold_heading or (sec["title"] == "Notes" and re.fullmatch(r"(Foreword|Introduction|Chapter \d+|Concluding Words)", p["text"])):
+            if p["kind"] != "p" and len(p["text"].split()) > 20:
+                sec["blocks"].append({"type": "blockquote", "text": flat})  # a passage set in large type (a pull quote, a chapter's introduction) is text, never a heading
+            elif p["kind"] != "p" or caps_heading or bold_heading or (sec["title"] == "Notes" and re.fullmatch(r"(Foreword|Introduction|Chapter \d+|Concluding Words)", p["text"])):
                 if re.sub(r"\W", "", re.sub(r"<[^>]+>", "", flat).lower()) != re.sub(r"\W", "", sec["title"].lower()):  # (not the section's own title again, bold or not)
                     sec["blocks"].append({"type": "h", "text": re.sub(r"<[^>]+>", "", flat).strip() if bold_heading else flat})  # in Notes: the chapter each group of notes belongs to
             elif p["bullet"]:  # "In this chapter you will learn:" items, printed after a check-mark icon
                 sec["blocks"].append({"type": "entry", "text": "• " + flat})
             elif re.fullmatch(r"\[.*\]", p["text"].strip()):
                 sec["blocks"].append({"type": "cite", "text": flat})  # a quotation's source: "[Letter to Balai, 21 July 1969]"
-            elif italic and indent_band(p["x0"], margin) == 2:
+            elif italic and indent_band(p["x0"], margin, p.get("spaced")) == 2:
                 sec["blocks"].append({"type": "quote", "lines": [re.sub(r"<[^>]+>", "", ln).strip() for ln in text.split("\n") if ln.strip()]})
-            elif indent_band(p["x0"], margin) == 2:
+            elif indent_band(p["x0"], margin, p.get("spaced")) == 2:
                 sec["blocks"].append({"type": "blockquote", "text": flat})
             else:
                 sec["blocks"].append({"type": "p", "text": flat})
@@ -444,6 +689,16 @@ def convert(book: str) -> None:
             if first.isupper():  # "SACRED MARRIAGE" under the chapter's name: its subtitle
                 sec["subtitle"] = first.title()
                 sec["blocks"].pop(0)
+        # A story number printed on its own line ("1." from Word's list numbering) and its title set as a centred line: one heading "1. Title", as the book's other stories are
+        merged = []
+        for blk in sec["blocks"]:
+            prev = merged[-1] if merged else None
+            title_lines = blk.get("lines") if blk["type"] in ("quote", "centred") else [blk.get("text", "")] if blk["type"] in ("p", "h") else None
+            if prev and prev["type"] in ("p", "h") and re.fullmatch(r"\d+\.[\s​]*", re.sub(r"<[^>]+>", "", prev.get("text", ""))) and title_lines and len(title_lines) <= 2 and len(" ".join(title_lines)) < 90:
+                merged[-1] = {"type": "h", "text": re.sub(r"<[^>]+>", "", prev["text"]).strip() + " " + re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", " ".join(title_lines))).strip()}
+                continue
+            merged.append(blk)
+        sec["blocks"] = merged
         # A paragraph cut by a picture or a page break ("There was this" / picture / "burden of karma…") is one paragraph again:
         # a plain paragraph that opens lowercase joins the earlier plain paragraph that stopped mid-sentence
         sec["blocks"] = join_cut_paragraphs(sec["blocks"])
@@ -464,7 +719,17 @@ def convert(book: str) -> None:
             c[k] = p["text"]
     apply_fixes(sections, meta)
     for sec in sections:
-        sec["blocks"] = join_cut_paragraphs(sec["blocks"])  # a fix may leave a paragraph cut mid-sentence
+        # A paragraph opening with a drop cap is indented beside the letter, so its first lines read as an inset block ("After about two weeks
+        # of serving remotely, we" / "received the news…"): an unfinished inset followed by a lowercase paragraph is one paragraph
+        joined = []
+        for blk in sec["blocks"]:
+            prev = joined[-1] if joined else None
+            if (prev and prev["type"] == "blockquote" and blk["type"] == "p" and re.match(r"(?:<[^>]+>)*[a-z]", blk["text"])
+                    and not re.sub(r"<[^>]+>", "", prev["text"]).rstrip().endswith((".", "!", "?", "”", '"', ":", ";"))):
+                joined[-1] = {**blk, "text": prev["text"].rstrip() + " " + blk["text"].lstrip()}
+                continue
+            joined.append(blk)
+        sec["blocks"] = join_cut_paragraphs(joined)  # a fix may leave a paragraph cut mid-sentence
     for sec in sections:  # a list the PDF stores as one paragraph ("Specifics: • one … • two …"): every bullet is its own paragraph
         listed = []
         for blk in sec["blocks"]:
@@ -475,8 +740,16 @@ def convert(book: str) -> None:
         sec["blocks"] = listed
     if meta.get("tidy"):  # "tidy": true — verses, translations, subheadings, signatures, capital openings, breaks (book_tidy.py)
         tidy_sections(sections, meta)
+    if meta.get("drop_headings"):  # headings left out by hand, as in the OCR route (an editor's note printed as a heading: "BOX NEEDED")
+        for sec in sections:
+            sec["blocks"] = [b for b in sec["blocks"] if not (b["type"] == "h" and re.sub(r"<[^>]+>", "", b.get("text", "")).strip() in meta["drop_headings"])]
+    line_settings(sections, meta)
+    for sec in sections:  # a translation cut off its verse block joins its continuation ("…common men follow in" / "his footsteps…")
+        sec["blocks"] = join_cut_paragraphs(sec["blocks"])
     for sec in sections:
-        if re.search(r"dedicat", sec["title"], re.I):
+        if re.search(r"dedicat|invocation", sec["title"], re.I):
+            # A dedication or invocation is set centred: its lines printed larger (small capitals) read as headings, but are its text
+            sec["blocks"] = [{"type": "centred", "lines": [b["text"]]} if b["type"] == "h" else b for b in sec["blocks"]]
             sec["blocks"] = tidy_dedication(sec["blocks"])
 
     out_dir = local_env.stage_dir(book, "assembled")

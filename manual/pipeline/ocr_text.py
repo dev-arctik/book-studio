@@ -13,7 +13,7 @@ import local_env
 # Look-alike letters that never occur in IAST transliteration, so they are always OCR confusions (seen: "nîcair", "Nişkramati",
 # "○ debauchee" for the vocative O, "VIṢŅU" with a cedilla N). Not ü: it is real in names (Müller, Krüger).
 NON_IAST_FIXES = str.maketrans({"î": "ī", "â": "ā", "û": "ū", "Î": "Ī", "Â": "Ā", "Û": "Ū", "ş": "ṣ", "Ş": "Ṣ", "ţ": "ṭ", "Ţ": "Ṭ", "○": "O",
-                                "ņ": "ṇ", "Ņ": "Ṇ",
+                                "ņ": "ṇ", "Ņ": "Ṇ", "ð": "d", "Ð": "D",  # ð: an italic script's d ("ðhotī", "viðher" — Ocean of Mercy)
                                 "ș": "ṣ", "Ș": "Ṣ", "ă": "ā", "Ă": "Ā", "ț": "ṭ", "Ț": "Ṭ", "Ŗ": "Ṛ", "ŗ": "ṛ", "Ń": "Ṅ", "ń": "ṅ", "Ä": "Ā", "ä": "ā"})  # Romanian / Latin-Extended look-alikes of IAST letters
 # Characters the book font lacks: decorative list bullets (♦ ► ▪ ➤ □ …) become the standard bullet •
 BULLET_FIXES = str.maketrans({**{c: "•" for c in "♦►▪➤●■◆▸▶➢✓✔□⇒◦"}, "′": "'", "ˇ": ""})  # also: prime → apostrophe, stray caron speck removed
@@ -28,6 +28,7 @@ INLINE_TAGS = r"(?:i|b|sup)"  # emphasis and footnote markers survive; every oth
 def clean_inline(html: str) -> str:
     """Keep only <i>/<b>/<sup> and line breaks; list items and table rows end their line; everything else becomes plain text."""
     html = html.translate(NON_IAST_FIXES).translate(BULLET_FIXES)
+    html = html.replace("॥", "||").replace("।", "|")  # dandas close Sanskrit verses in transliteration too ("vidhiḥ ॥72॥"): kept, in the book's own ASCII form
     html = re.sub(r"[ऀ-ॿ]+", "", html)  # Devanagari (a Hindi column, a printed mantra): Gentium has none, so it would fall back to another font
     html = re.sub(r"[ঀ-৿]+", "", html)  # Bengali signs and captions inside photos: Gentium has no Bengali letters, so they would print as empty boxes
     html = html.replace("r̥", "ṛ").replace("R̥", "Ṛ")  # the reader sometimes puts a combining ring below instead of the dot (Kr̥ṣṇa, kr̥pā)
@@ -39,7 +40,7 @@ def clean_inline(html: str) -> str:
     html = re.sub(r"\bŚri(?=\w)", "Śrī", html)  # the reader drops the macron of Śrīla / Śrīmad / Śrīdhara (hundreds per book); no Sanskrit word begins "Śri" + letter
     html = re.sub(r"\bŚri\b", "Śrī", html)
     html = re.sub(r"(?<=[^\s>])\s*<(?:ol|ul)\b[^>]*>", "\n", html, flags=re.I)  # a list nested inside an item's text: its items are lines too
-    html = re.sub(r"<br\s*/?>\s*|</li>|</tr>|</p>\s*(?=<p)", "\n", html, flags=re.I)  # several <p> in one block = separate lines
+    html = re.sub(r"<br\s*/?>\s*|</li>|</tr>|</p>\s*(?=<p)|</h\d>\s*(?=<h\d)", "\n", html, flags=re.I)  # several <p> (or <h2> + <h3>: "TEXT ONE" / "THE PROCESS…") in one block = separate lines
     html = re.sub(rf"</?(?!{INLINE_TAGS}>)[a-z0-9]+[^>]*>", "", html, flags=re.I)
     html = re.sub(rf"<(/?)({INLINE_TAGS})\s[^>]*>", r"<\1\2>", html)
     text = htmllib.unescape(html)
@@ -84,7 +85,9 @@ def tidy_dedication(blocks: list) -> list:
             out[-1] = {**out[-1], "text": out[-1]["text"] + " " + glue}
         else:
             out.append(b)
-    return out
+    # A dedication is set centred: a short line the reader returned as a paragraph ("This book is dedicated to", "Founder-Ācārya: …") is centred too,
+    # and so is a whole dedication paragraph — one centred block, its lines wrapping on their own (Family Life: "This book is a humble offering…")
+    return [{"type": "centred", "lines": [b["text"]]} if b["type"] == "p" else b for b in out]
 
 
 def add_paragraph(paragraphs: list, text: str) -> None:

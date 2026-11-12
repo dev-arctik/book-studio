@@ -39,7 +39,7 @@ def balaram_fonts(pdf) -> set[str]:
 
 # Cyrillic letters a text layer sometimes uses for Latin ones that look the same (Demons: "К а" for "Kṛ", "О Lord"); no book here has Cyrillic text
 CYRILLIC_LOOKALIKES = str.maketrans("АВЕКМНОРСТХаеорсух", "ABEKMHOPCTXaeopcyx")
-BULLET_GLYPHS = str.maketrans({c: "•" for c in "●♦►▪➤■◆▸▶➢✓✔□⇒◦"})  # list bullets Gentium lacks: the plain bullet
+BULLET_GLYPHS = str.maketrans({c: "•" for c in "●♦►▪➤■◆▸▶➢✓✔□⇒◦"})  # list bullets Gentium lacks: the plain bullet (also Word's Symbol/Wingdings bullets, private-use U+F0B7/U+F0A7: a box in print — Romapada)
 LIGATURES = {0xFB00: "ff", 0xFB01: "fi", 0xFB02: "fl", 0xFB03: "ffi", 0xFB04: "ffl"}  # ligature glyphs written as the letters they stand for
 
 
@@ -122,8 +122,11 @@ def running_heads(pdf) -> set[str]:
 
 
 def is_bullet_line(ln: dict) -> bool:
-    """A line made only of a dingbat font's bullet mark."""
-    return bool(BULLET_FONTS) and all(s["font"].startswith(BULLET_FONTS) for s in ln["spans"] if s["text"].strip())
+    """A line made only of a dingbat font's bullet mark — or of Word's own Symbol/Wingdings bullet (private-use U+F0B7/U+F0A7), in any book."""
+    marks = [s for s in ln["spans"] if s["text"].strip()]
+    if marks and all(set(s["text"].strip()) <= {"", ""} for s in marks):
+        return True
+    return bool(BULLET_FONTS) and all(s["font"].startswith(BULLET_FONTS) for s in marks)
 
 
 def bullet_boxes(page) -> list[tuple]:
@@ -148,9 +151,22 @@ def merge_pieces(lines: list[dict]) -> list[dict]:
     return out
 
 
+def visible_starts(page) -> dict[tuple, float]:
+    """Per line (keyed by its rounded top-left corner): x of its first visible character. A typed-up book that indents first lines
+    with spaces ("            The research…") has every line starting at the margin, so the indent that marks a paragraph is only seen here."""
+    starts = {}
+    for block in page.get_text("rawdict")["blocks"]:
+        for ln in block.get("lines", []):
+            chars = [c for s in ln["spans"] for c in s.get("chars", [])]
+            if chars and chars[0]["c"].isspace() and (vis := next((c for c in chars if not c["c"].isspace()), None)):
+                starts[(round(ln["bbox"][0]), round(ln["bbox"][1]))] = vis["bbox"][0]
+    return starts
+
+
 def page_lines(page) -> list[dict]:
     """Every text line on a page with its spans; page numbers, running heads and blank lines left out."""
     lines = []
+    spaced = None  # visible_starts(page), read only when a line opens with spaces
     for block in page.get_text("dict")["blocks"]:
         for ln in merge_pieces(block.get("lines", [])):
             if is_bullet_line(ln):
@@ -173,7 +189,20 @@ def page_lines(page) -> list[dict]:
             if page.number in PAGE_SCALE:
                 size = round(size * PAGE_SCALE[page.number], 1)
                 spans = [{**s, "size": round(s["size"] * PAGE_SCALE[page.number], 1)} for s in spans]
-            lines.append({"spans": spans, "text": text, "size": size, "y": ln["bbox"][1], "x0": ln["bbox"][0] + shift, "x1": ln["bbox"][2] + shift})
+            x0 = ln["bbox"][0]
+            if ln["spans"] and ln["spans"][0]["text"][:1].isspace():  # measured from the first visible character, not the leading spaces
+                spaced = visible_starts(page) if spaced is None else spaced
+                x0 = spaced.get((round(ln["bbox"][0]), round(ln["bbox"][1])), x0)
+            lines.append({"spans": spans, "text": text, "size": size, "y": ln["bbox"][1], "x0": x0 + shift, "x1": ln["bbox"][2] + shift, "spaced": x0 > ln["bbox"][0] + 1, "box_x0": ln["bbox"][0] + shift})
+    # A typed indent starts where the page's body lines start: only there do the spaces count. A piece in mid-line ("Appreciating Srila Prabhupada's"
+    # + "  Bhagavad-gita") or a line of an inset block keeps its box's start, as it always did
+    starts = Counter(round(l["box_x0"]) for l in lines)
+    shared = [x for x, n in starts.items() if n >= 2]
+    left = min(shared) if shared else min(starts, default=0)  # (the body's own start: the leftmost start two lines share — not one caption further left, nor the edge of a map most lines wrap round)
+    for l in lines:
+        l["vis_x0"] = l["x0"]  # (kept: text wrapped beside a picture is measured from the picture's edge in pdf_to_book.page_items)
+        if l["spaced"] and abs(l["box_x0"] - left) > 3:
+            l["x0"], l["spaced"] = l["box_x0"], False
     return sorted(lines, key=lambda l: l["y"])
 
 
@@ -216,9 +245,12 @@ def kind_of(size: float, body: float) -> str:
     return "p"
 
 
-def indent_band(x0: float, margin: float) -> int:
-    """0 = at the left margin, 1 = a paragraph's indented first line, 2 = an indented block (verse, list item, citation)."""
-    return 0 if x0 < margin + 5 else 1 if x0 < margin + FIRST_INDENT_MAX else 2
+def indent_band(x0: float, margin: float, spaced: bool = False) -> int:
+    """0 = at the left margin, 1 = a paragraph's indented first line, 2 = an indented block (verse, list item, citation).
+    spaced: the indent is typed as spaces — a first line, however deep (Demian Martins indents 36 pt so; a typist centres "Mother Nidra Devi"
+    or a "Back to Bilvavana" link with spaces), never an inset block: it starts its own paragraph."""
+    band = 0 if x0 < margin + 5 else 1 if x0 < margin + FIRST_INDENT_MAX else 2
+    return 1 if spaced and band == 2 else band
 
 
 def paragraphs(pages: list[list[dict]], body: float, pitch: float, right: float, margin: float | None = None,
@@ -231,9 +263,14 @@ def paragraphs(pages: list[list[dict]], body: float, pitch: float, right: float,
     a line at the book's first-line 'indent' after a full one starts a paragraph (a note's hanging lines, a little less
     indented, don't), and moving into or out of an indented block starts a new block."""
     paras = []
+    held = []  # pictures the text wraps round ("beside"): placed after the paragraph they sit in, which they must not cut
     for page_no, lines in enumerate(pages):
+        held += [{"kind": "object", "object": l["object"], "runs": [], "text": "", "page": page_no, "y": l["y"]} for l in lines if "object" in l and l["object"].get("beside")]
+        lines = [l for l in lines if not ("object" in l and l["object"].get("beside"))]
         for i, l in enumerate(lines):
             if "object" in l:
+                paras += held
+                held = []
                 paras.append({"kind": "object", "object": l["object"], "runs": [], "text": "", "page": page_no})
                 continue
             kind = kind_of(l["size"], body)
@@ -242,7 +279,7 @@ def paragraphs(pages: list[list[dict]], body: float, pitch: float, right: float,
                 new = True  # a list: one line, one item
             elif i == 0:
                 # Continue a paragraph cut by the page break only if it stopped mid-sentence
-                new = not (last and last["kind"] == kind == "p" and not last["text"].rstrip().endswith(TERMINAL))
+                new = not (last and last["kind"] == kind == "p" and not last["text"].rstrip().endswith(TERMINAL) and last["page"] == page_no - 1)  # (only from the page just before: never across a skipped page)
                 if HEADING_LINES and re.sub(r"[^a-z0-9]", "", unicodedata.normalize("NFKD", l["text"]).encode("ascii", "ignore").decode().lower()) in HEADING_LINES:
                     new = True  # a heading line at the very top of a page
                 if re.match(r"Chapter\s+[\w-]+(\s|$)", l["text"]):
@@ -256,6 +293,10 @@ def paragraphs(pages: list[list[dict]], body: float, pitch: float, right: float,
                        or (kind != "p" and last["kind"] != "p" and l["size"] != lines[i - 1]["size"]))
                 # A short all-capitals line ("IMPORTANCE", "THE ESSENCE") is a heading of its own, even where the typed-up text leaves no gap round it
                 heading_like = lambda ln: len(ln["text"]) < 60 and ln["text"].isupper() and len(ln["text"].split()) <= 6 and sum(c.isalpha() for c in ln["text"]) >= 6
+                if l.get("para_start"):
+                    new = True  # a paragraph that opens where text starts to wrap round a picture (pdf_to_book.page_items)
+                if kind == "p" and re.match(r"•\s*\w", l["text"].lstrip()):
+                    new = True  # a line that opens with a bullet is a list item of its own ("• Topics: …" after "…organized as follows:"); a lone "•" is an ornament
                 if kind == "p" and NUMBERED_ITEMS and re.match(r"\d{1,2}\.\s+\S", l["text"]):
                     new = True  # "19. …" opens a numbered item (book_meta.json "numbered_items": a typed-up compilation of quotations)
                 own = lambda ln: bool(HEADING_LINES) and re.sub(r"[^a-z0-9]", "", unicodedata.normalize("NFKD", ln["text"]).encode("ascii", "ignore").decode().lower()) in HEADING_LINES
@@ -264,11 +305,11 @@ def paragraphs(pages: list[list[dict]], body: float, pitch: float, right: float,
                 if kind == "p" and (heading_like(l) or heading_like(lines[i - 1])):
                     new = True
                 if margin is not None and kind == "p" and not new:
-                    before, now = indent_band(lines[i - 1]["x0"], margin), indent_band(l["x0"], margin)
+                    before, now = indent_band(lines[i - 1]["x0"], margin, lines[i - 1].get("spaced")), indent_band(l["x0"], margin, l.get("spaced"))
                     new = before != now and (before, now) != (1, 0)  # a first line's indent followed by full lines is one paragraph
                     if DEEP_FIRST_LINES and (before, now) == (2, 1):
                         new = False  # a quote's deeper first line, then its lines at the normal first-line indent
-                    if (before, now) == (0, 1) and indent is not None and abs(l["x0"] - indent) > 2.5:
+                    if (before, now) == (0, 1) and indent is not None and abs(l["x0"] - indent) > 2.5 and not l.get("spaced"):  # (an indent typed as spaces is always a first line)
                         new = False  # a hanging line (a note's second line), not a new paragraph's indent
                     # In an indented block, plain → italic (a translation, then its Sanskrit verse) starts a new block
                     italic = lambda ln: all(s["italic"] for s in ln["spans"] if s["text"].strip())
@@ -287,7 +328,10 @@ def paragraphs(pages: list[list[dict]], body: float, pitch: float, right: float,
                     and lines[i - 1]["text"].rstrip().endswith((".", "!", "?", ")", "”", "’"))):
                 new = True
             if new:
-                paras.append({"kind": kind, "runs": [], "text": "", "page": page_no, "x0": l.get("x0", 0), "x1": l.get("x1", 0), "bullet": l.get("bullet", False)})
+                ready = [o for o in held if o["page"] < page_no or o["y"] < l["y"]]  # (a held picture goes before the next paragraph below its top)
+                paras += ready
+                held = [o for o in held if not any(o is r for r in ready)]
+                paras.append({"kind": kind, "runs": [], "text": "", "page": page_no, "x0": l.get("x0", 0), "x1": l.get("x1", 0), "bullet": l.get("bullet", False), "spaced": l.get("spaced", False)})
                 last = paras[-1]
             elif last["runs"]:
                 # Joining the next line: keep a deliberate short-line break (verse, address); otherwise a space,
@@ -303,6 +347,7 @@ def paragraphs(pages: list[list[dict]], body: float, pitch: float, right: float,
                 last["runs"].append({"text": s["text"], "bold": s["bold"], "italic": s["italic"], "size": s["size"]})
             last["text"] = (last["text"] + " " + l["text"]).strip()
             last["x1"] = max(last.get("x1", 0), l.get("x1", 0))
+    paras += held
     heal_hyphens(paras)
     return paras
 

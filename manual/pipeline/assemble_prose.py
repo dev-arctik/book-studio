@@ -29,7 +29,7 @@ TOC_PART_RE = re.compile(r"^Part\s+(\d+)\s*:\s*(.+)$", re.I)
 TOC_BOOK_RE = re.compile(r"^((?:BOOK|PART)\s+[A-Z]+)\s*:\s*(.+)$", re.I)  # "BOOK ONE: FROM THE MYSTIC WEST 1967–68"
 TOC_NUMBERED_RE = re.compile(r"^(\d{1,2})\s+([A-Za-z].+)$")  # "1 Children of the Fifties"
 TOC_CHAPTER_RE = re.compile(r"^Chapter\s+(\d+)\s*:\s*(.+)$", re.I)
-SCENE_BREAK_RE = re.compile(r"^(?:\*(\s*\*)+|~\*~|•)$")  # "* * *", "~*~", or a lone bullet printed centred between scenes
+SCENE_BREAK_RE = re.compile(r"^(?:\*(\s*\*)+|~\*~|•|\.(?:\s*\.){2,}|…)$")  # "* * *", "~*~", a lone bullet, or a row of dots (". . . .": Chasing Rhinos) printed centred between scenes
 ORNAMENT_RE = re.compile(r"^[_\-–—]+\*{3,}[_\-–—]+$")  # "__*****__": a printed divider line, left out
 PART_LABEL_RE = re.compile(r"^PART\s+([A-Z]+|\d{1,2})$", re.I)  # "PART ONE" / "PART 1" above a part title
 NOTE_START_RE = re.compile(r"^\d{1,3}\.\s")
@@ -108,14 +108,19 @@ def facsimile(page_no: int, page_blocks) -> list[dict]:
     return out
 
 
-def picture_page(page_no: int, page_blocks) -> list[dict]:
+def picture_page(page_no: int, page_blocks, opens: bool = True) -> list[dict]:
     """A page set as one full-width picture, with no caption — for pages in a script we cannot typeset (the Bengali text of Śrī
     Hari-nāma): the page's content, without its running head and page number, as printed."""
     content = [b for b in page_blocks if b["label"] not in ("PageHeader", "PageFooter") and ((b["html"] or "").strip() or b["label"] in PICTURE_LABELS)]
+    head = []
+    top = min(content, key=lambda b: b["bbox"][1]) if content else None
+    if opens and top and top["label"] == "SectionHeader" and re.search(r"<h[1-3]\b", top["html"]) and plain(clean_inline(top["html"])):  # (a real title is tagged as one; a diagram's label — "North" — is not)  # the page opens a section ("Books Translated by…"): its title stays text, so the section is found and not printed twice
+        head = [{"page": page_no, "label": "SectionHeader", "text": clean_inline(top["html"]), "html": "", "shape": "", "rule": False}]
+        content = [b for b in content if b is not top]
     if not content:
-        return []
+        return head
     bbox = [min(b["bbox"][0] for b in content), min(b["bbox"][1] for b in content), max(b["bbox"][2] for b in content), max(b["bbox"][3] for b in content)]
-    return [{"page": page_no, "label": "Picture", "text": "", "bbox": bbox, "image_bbox": content[0]["image_bbox"], "wide": True}]
+    return head + [{"page": page_no, "label": "Picture", "text": "", "bbox": bbox, "image_bbox": content[0]["image_bbox"], "wide": True}]
 
 
 def load_blocks(book: str, academic: bool = False, facsimiles: set = frozenset(), inset_quotes: bool = False, running_heads: list = (), shaped: bool = False,
@@ -131,7 +136,7 @@ def load_blocks(book: str, academic: bool = False, facsimiles: set = frozenset()
             continue
         if page_no in picture_pages:
             numbered_pages.add(page_no)
-            blocks += picture_page(page_no, page_blocks)
+            blocks += picture_page(page_no, page_blocks, opens=page_no - 1 not in picture_pages)  # (only the first page of a run can open a section)
             continue
         for b in page_blocks:
             if b["label"] in PICTURE_LABELS:
@@ -718,11 +723,14 @@ def assemble(blocks, contents, unnumbered: set, dropped: set, front_prefixes: tu
         if blk["label"] == "Footnote" and blk["page"] in opts.get("text_pages", ()):  # a dialogue the reader tagged as footnotes
             blk = {**blk, "label": "Text"}
         # an inserted section opens at its page's first block, or, with "at" (a regex), at the heading on that page that matches it (a chapter that starts mid-page)
-        if extra and blk["page"] >= extra[0]["page"] and (
-                not extra[0].get("at") or blk["page"] > extra[0]["page"]
-                or (blk["label"] == "SectionHeader" and re.search(extra[0]["at"], plain(blk.get("text", ""))))):
+        due = lambda x: blk["page"] >= x["page"] and (not x.get("at") or blk["page"] > x["page"] or (blk["label"] == "SectionHeader" and re.search(x["at"], plain(blk.get("text", "")))))  # noqa: E731
+        while extra and due(extra[0]):
             sections.append(Section(kind=extra[0].get("kind", "back"), title=extra[0]["title"], subtitle=extra[0].get("subtitle", ""), start_page=blk["page"]))
-            extra = extra[1:]
+            opened, extra = extra[0], extra[1:]
+            # A part whose own page held nothing we keep (an ornament: "Chapter Two" in a frame) opens on the next page — where its first chapter
+            # also begins: that chapter opens at the same block, or it would leave its heading and first page under the part (Family Life)
+            if not (opened.get("kind") == "part" and blk["page"] > opened["page"]):
+                break
         if skip:
             skip -= 1
             continue
@@ -1094,6 +1102,10 @@ def main():
         for b in blocks:
             if b.get("text"):
                 b["text"] = re.sub(pattern, repl, b["text"])
+    plain_heads = set(meta.get("plain_headings", []))  # "plain_headings": lines the reader took for headings that are text (a bold translation at a page foot, continued overleaf)
+    for b in blocks:
+        if b["label"] == "SectionHeader" and plain(b.get("text", "")) in plain_heads:
+            b["label"] = "Text"
     for rx in meta.get("heading_patterns", []):  # text lines that are the book's entry headings (a date, a time of day): set as subheadings
         for b in blocks:
             if b["label"] == "Text" and re.fullmatch(rx, plain(b["text"])):
@@ -1209,15 +1221,16 @@ def main():
         for s in sections:
             s.blocks = [b for b in s.blocks if not (b["type"] == "h" and re.sub(r"<[^>]+>", "", b.get("text", "")).strip() in meta["drop_headings"])]
 
-    for s in sections:
-        if re.search(r"dedicat", s.title, re.I):
-            s.blocks = tidy_dedication(s.blocks)
     # "right_lines": lines set right-aligned like a source (the name under a quoted passage, which the OCR read as a paragraph)
+    # — before the dedication is tidied, so a signature under it stays right and is not centred with the dedication's short lines
     if meta.get("right_lines"):
         for s in sections:
             for b in s.blocks:
                 if b["type"] == "p" and plain(b.get("text", "")) in meta["right_lines"]:
-                    b["type"], b["text"] = "cite", plain(b["text"])
+                    b["type"], b["text"] = "cite", re.sub(r"<sup>.*?</sup>", "", b["text"]).strip()  # (its italics stay: "Author-Translator of <i>Dance of Divine Love</i>")
+    for s in sections:
+        if re.search(r"dedicat", s.title, re.I):
+            s.blocks = tidy_dedication(s.blocks)
 
     # Indexes are matched (so the sections before them end in the right place) but left out: their page numbers would be wrong
     report_sections = sections

@@ -98,13 +98,16 @@ def cover_image(pdf_path, height: int = 1600) -> Image.Image:
     return page.render(scale=height / page.get_size()[1]).to_pil().convert("RGB")
 
 
-def crop_figure(pdf: pdfium.PdfDocument, page_no: int, bbox, image_bbox) -> Image.Image:
-    """Render the page region at CROP_DPI and return the cleaned-up figure — in colour if the picture is coloured, else greyscale."""
+def crop_figure(pdf: pdfium.PdfDocument, page_no: int, bbox, image_bbox, trim: bool = True) -> Image.Image:
+    """Render the page region at CROP_DPI and return the cleaned-up figure — in colour if the picture is coloured, else greyscale.
+    trim=False keeps the region as given (a text page cropped to the book's text column, so all such pages print at one scale)."""
     page = pdf[page_no - 1].render(scale=CROP_DPI / 72).to_pil().convert("RGB")
     scale = page.width / image_bbox[2]  # OCR boxes are in the OCR render's pixel space
     region = page.crop(tuple(int(v * scale) for v in bbox))
-    _, (x0, y0, x1, y1) = detect(np.array(region.convert("L")))  # frame and margin detection work on grey tones
-    figure = region.crop((x0, y0, x1, y1))
+    if trim:
+        _, (x0, y0, x1, y1) = detect(np.array(region.convert("L")))  # frame and margin detection work on grey tones
+        region = region.crop((x0, y0, x1, y1))
+    figure = region
     figure = figure if is_colour(figure) else figure.convert("L")
     figure.thumbnail((MAX_EDGE, MAX_EDGE), Image.LANCZOS)
     # A scan's picture is soft: a mild unsharp mask brings back edges and lettering without adding noise (Devansh, 2026-10-23: picture quality)

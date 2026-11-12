@@ -136,14 +136,28 @@ def mark_headings(front: list[dict], chapters: list[dict], topics: bool = True, 
             ch["blocks"] = kept
     for ci, ch in enumerate(chapters):
         k = 0
-        for b in ch["blocks"]:
+        blocks = ch["blocks"]
+        caps = lambda j: 0 <= j < len(blocks) and blocks[j]["type"] == "h" and plain(blocks[j]).isupper()  # noqa: E731
+        stacked = set()  # runs of 4+ capital headings in a row: a letterhead or address block, not a title with its author line
+        j = 0
+        while j < len(blocks):
+            end = j
+            while caps(end):
+                end += 1
+            if end - j >= 4:
+                stacked.update(range(j, end))
+            j = max(end, j + 1)
+        for i, b in enumerate(blocks):
             if b["type"] != "h":
                 continue
             text = plain(b)
             label = bool(LABEL_HEADING_RE.match(text))
-            if label or (text.isupper() and len(text) < 60):
+            if label or (re.sub(r"\b\d+(st|nd|rd|th)\b", "", text).isupper() and len(text) < 60):  # (an ordinal is no lowercase: the screenplay cue "1st DEVOTEE")
                 b["centre"] = True
-            if topics and not label and 2 < len(text) <= 120 and not text.endswith((",", ";")) and not text.startswith(("“", "‘", "\"", "—", "–")) and not text[:1].islower() and not restates(text, ch["title"] + " " + (ch.get("subtitle") or "")) and not re.search(r"\(Popup|^\d+ \(|^(Chapter|Section|Part) [\w-]+$", text) and not (len(text) > 50 and ": " in text) and (counts[text] <= 2 if not text.isupper() else counts[text] == 1 and not re.search(r"\d", text)):
+            # (not a byline "By Deena Bandhu" / "2008 By …", a "-Name" credit, a bare year, or a chapter label repeated with its title "Chapter 5 OUTSIDE IN";
+            # nor a line in a long stack of capitals — a letterhead or address block: "STATE OF FLORIDA / DEPARTMENT OF CORRECTIONS / TO: …")
+            byline = bool(re.match(r"(\d{4}\s+)?(By|BY)\s+(?![A-Z][a-z]+ing\b)[A-Z]|-\s*[A-Z]|\d{4}$|(Chapter|Section) \d+\s+[A-Z]{2,}", text)) or i in stacked
+            if topics and not label and not byline and 2 < len(text) <= 120 and not text.endswith((",", ";")) and not text.startswith(("“", "‘", "\"", "—", "–")) and not text[:1].islower() and not restates(text, ch["title"] + " " + (ch.get("subtitle") or "")) and not re.search(r"\(Popup|^\d+ \(|^(Chapter|Section|Part) [\w-]+$", text) and not (len(text) > 50 and ": " in text) and (counts[text] <= 2 if not text.isupper() else counts[text] == 1 and not re.search(r"\d", text)):
                 b["id"] = f"sub-{ci}-{k}"  # the template labels it, so the contents can link to it and show its page
                 k += 1
 
@@ -166,13 +180,17 @@ class FigureCropper:
     """Crops each figure out of the scan into the temporary build folder and hands the template its path and shape."""
 
     def __init__(self, book: str, build_dir: Path):
-        self.pdf = pdfium.PdfDocument(str(local_env.find_book(book)))
+        source = local_env.find_book(book)
+        self.pdf = pdfium.PdfDocument(str(source)) if source.suffix.lower() == ".pdf" else None  # (a book read back from our own EPUB has no pages to crop)
         self.build_dir = build_dir
         self.count = 0
 
     def place(self, b: dict, figure=None) -> dict:
         self.count += 1
-        figure = figure or crop_figure(self.pdf, b["page"], b["bbox"], b["image_bbox"])
+        if figure is None and b.get("file"):  # a picture that is already an image file (epub_to_book.py): used as it is
+            from PIL import Image
+            figure = Image.open(b["file"]).convert("RGB")
+        figure = figure or crop_figure(self.pdf, b["page"], b["bbox"], b["image_bbox"], trim=not b.get("exact"))
         path = self.build_dir / f"figure-{self.count:03d}.jpg"
         figure.save(path, quality=90, optimize=True)
         return {"path": typst_path(path), "aspect": figure.height / figure.width, "wide": b.get("wide", False),
@@ -292,7 +310,8 @@ def copyright_page(book: str, first_page: int, strip: list = (), only_page: int 
     if not pages:
         import pymupdf
         with pymupdf.open(local_env.find_book(book)) as pdf:
-            pages = [(n + 1, page_blocks_text(pdf[n])) for n in range(min(first_page - 1, len(pdf)))]  # decoded like the book's text
+            # decoded like the book's text; the page named in "copyright_page" counts too, even after the first section (Chaurasi-kosa's, behind its dedication)
+            pages = [(n + 1, page_blocks_text(pdf[n])) for n in range(len(pdf)) if n + 1 < first_page or n + 1 == only_page]
     best, best_hits = None, 1
     for n, texts in pages:
         if only_page and n != only_page:  # book_meta.json "copyright_page": the page checked by hand (the cover also says "Copyrighted material")
