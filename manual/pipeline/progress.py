@@ -41,7 +41,9 @@ def reader_running() -> bool:
     try:
         import psutil
 
-        return any("llama-server" in (p.info["name"] or "").lower() for p in psutil.process_iter(["name"]))
+        # the WSL reader shows on Windows as wsl.exe running llama_wsl.sh (wsl_reader.py)
+        return any("llama-server" in (p.info["name"] or "").lower() or "llama_wsl.sh" in " ".join(p.info["cmdline"] or [])
+                   for p in psutil.process_iter(["name", "cmdline"]))
     except Exception:  # noqa: BLE001 — no process list is never a reason to stop
         return False
 

@@ -12,13 +12,14 @@ import json
 import os
 import re
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 
 import pypdfium2 as pdfium
 
 import no_torch
 import power
+import wsl_reader
 
 if no_torch.needed():  # PyTorch blocked or not installed: Surya's llama-server OCR doesn't need it
     no_torch.install()
@@ -39,12 +40,14 @@ def render_pages(pdf_path: Path, page_numbers: list[int]):
 
 @contextmanager
 def ocr_predictor():
-    manager = SuryaInferenceManager()
-    try:
-        yield RecognitionPredictor(manager)
-    finally:
-        # Stop the spawned llama-server so a multi-GB model doesn't stay loaded in RAM
-        manager.stop()
+    # On Windows with tools/llama.cpp/wsl-reader.txt the server runs inside WSL (Smart App Control blocks llama-server.exe)
+    with (wsl_reader.wsl_server() if wsl_reader.enabled() else nullcontext()):
+        manager = SuryaInferenceManager()
+        try:
+            yield RecognitionPredictor(manager)
+        finally:
+            # Stop the spawned llama-server so a multi-GB model doesn't stay loaded in RAM
+            manager.stop()
 
 
 def save_page(path: Path, data: dict) -> None:
