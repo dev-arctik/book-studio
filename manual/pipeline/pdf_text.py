@@ -125,6 +125,30 @@ def page_shifts(pdf, limit: float = 10) -> dict[int, float]:
     target = overall.most_common(1)[0][0]
     return {n: target - x for n, x in per_page.items() if 0 < abs(target - x) <= limit}
 
+def facing_shifts(pdf) -> dict[int, float]:
+    """Facing pages with mirrored margins, found without a setting: when most odd pages share one left margin and most even pages another, every page is aligned to the more common one (by exactly that difference); a book without that pattern gets no shift."""
+    margin = {}
+    for page in pdf:
+        lines = page_lines(page)
+        sizes = Counter()
+        for l in lines:
+            sizes[l["size"]] += len(l["text"])
+        if not sizes:
+            continue
+        body = sizes.most_common(1)[0][0]  # (the page's own text size: an appendix set a point smaller has margins too)
+        starts = Counter(round(l["box_x0"]) for l in lines if l["size"] == body)
+        if sum(starts.values()) >= 8:
+            margin[page.number] = starts.most_common(1)[0][0]
+    odd, even = Counter(x for n, x in margin.items() if n % 2), Counter(x for n, x in margin.items() if not n % 2)
+    if not odd or not even:
+        return {}
+    (mo, no), (me, ne) = odd.most_common(1)[0], even.most_common(1)[0]
+    if abs(mo - me) < 4 or no < 0.7 * sum(odd.values()) or ne < 0.7 * sum(even.values()):
+        return {}
+    target = mo if sum(odd.values()) >= sum(even.values()) else me
+    return {n: target - x for n, x in margin.items() if x in (mo, me) and x != target}
+
+
 RUNNING_HEADS: set[str] = set()  # texts printed at the very top of many pages, set per book by pdf_to_book via running_heads()
 TOP_BAND = 0.07  # a running head sits within this share of the page height from the top
 
@@ -305,7 +329,7 @@ def indent_band(x0: float, margin: float, spaced: bool = False) -> int:
     spaced: the indent is typed as spaces — a first line, however deep (Demian Martins indents 36 pt so; a typist centres "Mother Nidra Devi"
     or a "Back to Bilvavana" link with spaces), never an inset block: it starts its own paragraph."""
     band = 0 if x0 < margin + 5 else 1 if x0 < margin + FIRST_INDENT_MAX else 2
-    return 1 if spaced and band == 2 else band
+    return 1 if spaced else band  # (also at the margin's own x: on a facing page set further left the typed indent reaches the book's margin — Romapada)
 
 
 def paragraphs(pages: list[list[dict]], body: float, pitch: float, right: float, margin: float | None = None,
@@ -350,6 +374,8 @@ def paragraphs(pages: list[list[dict]], body: float, pitch: float, right: float,
                 heading_like = lambda ln: len(ln["text"]) < 60 and ln["text"].isupper() and len(ln["text"].split()) <= 6 and sum(c.isalpha() for c in ln["text"]) >= 6
                 if l.get("para_start"):
                     new = True  # a paragraph that opens where text starts to wrap round a picture (pdf_to_book.page_items)
+                if margin is None and kind == "p" and l.get("spaced") and not lines[i - 1].get("spaced"):
+                    new = True  # an indent typed as spaces opens a paragraph even in a book whose layout gives no indent rule (Demian's 14 pt introduction)
                 if kind == "p" and re.match(r"•\s*\w", l["text"].lstrip()):
                     new = True  # a line that opens with a bullet is a list item of its own ("• Topics: …" after "…organized as follows:"); a lone "•" is an ornament
                 if kind == "p" and NUMBERED_ITEMS and re.match(r"\d{1,2}\.\s+\S", l["text"]):

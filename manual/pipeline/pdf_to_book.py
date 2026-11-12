@@ -176,7 +176,12 @@ def page_items(page, body: float, margin: float) -> list[dict]:
         # An indented quotation is symmetric too, but all its lines start at the same indent; centred lines start all over
         # A single centred line, clearly shorter than the text column, is a centred heading or number ("(1)", "The Ten Offences"), kept centred
         single = len(run) == 1 and abs(run[0]["size"] - body) < 0.5 and (run[0]["x1"] - run[0]["x0"]) < 0.72 * col_width and len(run[0]["text"]) < 90
-        if (len(run) >= 2 and max(x["x0"] for x in run) - min(x["x0"] for x in run) > 15) or single:
+        spread = max(x["x0"] for x in run) - min(x["x0"] for x in run) if run else 0
+        # (two short centred lines a few points apart are a verse too — "shruti-smrti-…" / "aikantiki harer…", 7.6 pt; an indented quotation's lines start at one x)
+        style = lambda x: (round(x["size"], 1), all(s["italic"] for s in x["spans"] if s["text"].strip()), all(s["bold"] for s in x["spans"] if s["text"].strip()))  # noqa: E731
+        short_lines = (len(run) >= 2 and spread > 3 and all(x["x1"] - x["x0"] < 0.8 * col_width for x in run)
+                       and len({style(x) for x in run}) == 1)  # (one style: a story's bold title and its italic date line are no verse)
+        if (len(run) >= 2 and spread > 15) or short_lines or single:
             italic = all(s["italic"] for x in run for s in x["spans"] if s["text"].strip())
             obj = ({"type": "quote", "lines": [x["text"] for x in run]} if italic
                    else {"type": "centred", "lines": [runs_text([{**s, "size": body} for s in x["spans"]], body) for x in run]})
@@ -516,6 +521,8 @@ def convert(book: str) -> None:
     pdf_text.HEADING_EXTRA = meta.get("heading_extra", pdf_text.HEADING_EXTRA)
     if meta.get("mirrored_pages"):  # facing pages with mirrored margins: align each page's margin before measuring indents
         pdf_text.PAGE_SHIFT = pdf_text.page_shifts(pdf, meta["mirrored_pages"] if isinstance(meta["mirrored_pages"], (int, float)) and not isinstance(meta["mirrored_pages"], bool) else 10)
+    else:  # facing pages found by themselves: odd and even pages each keep their own margin (Romapada: 90 and 54 pt) — an indent on one is the other's margin
+        pdf_text.PAGE_SHIFT = pdf_text.facing_shifts(pdf)
     # Topics the PDF's own outline lists below its chapters (levels 2 and 3): a line in the text with the same words is a subheading,
     # so the contents shows them under their chapter as the original does
     topic_pages: dict[str, set[int]] = {}
