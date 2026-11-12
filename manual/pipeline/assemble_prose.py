@@ -31,6 +31,7 @@ TOC_NUMBERED_RE = re.compile(r"^(\d{1,2})\s+([A-Za-z].+)$")  # "1 Children of th
 TOC_CHAPTER_RE = re.compile(r"^Chapter\s+(\d+)\s*:\s*(.+)$", re.I)
 SCENE_BREAK_RE = re.compile(r"^(?:\*(\s*\*)+|~\*~|•|\.(?:\s*\.){2,}|…)$")  # "* * *", "~*~", a lone bullet, or a row of dots (". . . .": Chasing Rhinos) printed centred between scenes
 ORNAMENT_RE = re.compile(r"^[_\-–—]+\*{3,}[_\-–—]+$")  # "__*****__": a printed divider line, left out
+VERSE_TRANSLATIONS = False  # book_meta.json "verse_translations": every verse's translation is printed as one small italic block ending on its reference, even where the reader lost the italics (Panihāṭi)
 DANDA_END_RE = re.compile(r"(?:[|।॥]+|(?:^|\s)/{1,2})\s*(?:\d+\s*(?:[|।॥]*|/{0,2}))?\s*$")  # a Sanskrit verse line ends on a daṇḍa ("… saṁsaratīti |", "… te ||71||"), or on slashes in a book typed without them ("… upaniṣatù // 2 //")
 opens_capital = lambda t: plain(t).lstrip("“\"‘'( ")[:1].isupper()  # noqa: E731  (a capital after an opening quote mark too: "‘According to…")
 PART_LABEL_RE = re.compile(r"^PART\s+([A-Z]+|\d{1,2})$", re.I)  # "PART ONE" / "PART 1" above a part title
@@ -616,9 +617,9 @@ def classify(text: str, label: str, prev: dict | None) -> list[dict]:
     # A short italic line right after a quote or an epigraph is its source ("Śrī Vṛndāvana-mahimāmṛta, Śataka 1.17, …")
     # (never a line ending on a dash: "laiṅge—", "kiṁ ca—" introduce the verse that follows)
     if italic_block(text) and len(lines) == 1 and len(p) < 160 and prev and prev["type"] in ("quote", "p") and prev.get("first") and source_like(p):
-        return [{"type": "cite", "text": p}]
+        return [{"type": "cite", "text": p, "italic": True}]
     if italic_block(text) and len(lines) == 1 and len(p) < 160 and prev and prev["type"] == "quote" and source_like(p):
-        return [{"type": "cite", "text": p}]
+        return [{"type": "cite", "text": p, "italic": True}]
     numbered = re.match(r"^[IVXL1]+(\.\d+)+\.?\s", p)  # "II.2.3.1. Artha-śāstras" — section headings can be long
     if label == "SectionHeader" and italic_block(text) and len(lines) >= 2:  # a verse the OCR tagged as a heading
         return [{"type": "quote", "lines": [plain(ln) for ln in lines]}]
@@ -636,7 +637,7 @@ def unfinished(paragraph: dict) -> bool:
     ("BY SRILA BHAKTISIDDHANTA SARASVATI PRABHUPADA"), which ends without a full stop."""
     text = plain(paragraph["text"])
     dated = len(text) < 70 and re.match(r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\b", text) and not text.endswith(".")  # a dated or placed line ("April 27 - July 25, 1972", "February, Stroudsburg, Pa") is complete in itself
-    return not ends_sentence(paragraph["text"]) and not text.isupper() and not dated and not DANDA_END_RE.search(text)  # (a verse that ends on its daṇḍa is complete)
+    return not ends_sentence(paragraph["text"]) and not text.isupper() and not dated and not DANDA_END_RE.search(text) and not REF_END_RE.search(text)  # (a verse that ends on its daṇḍa, or a translation on its reference, is complete)
 
 
 def source_like(p: str) -> bool:
@@ -654,7 +655,26 @@ def italic_block(text: str) -> bool:
     """Every line of the block is italic: a verse is printed in italics, and the reader wraps either the whole block ("<i>…<br/>…</i>") or each line on its own ("<i>yo na dadyād … /</i><br/><i>aśnante pitaras … //</i>" — Sat-kriyā-sāra-dīpikā)."""
     unbold = lambda s: re.sub(r"^\s*<b>(.*)</b>\s*$", r"\1", s, flags=re.S)  # noqa: E731  (a verse set in bold italics: "<b><i>yānti deva-vratā devān … //</i></b>")
     lines = [ln for ln in text.split("\n") if plain(ln)]
-    return bool(lines) and (is_all_italic(unbold(text)) or all(is_all_italic(unbold(ln)) for ln in lines))
+    return bool(lines) and (wrapped_italic(unbold(text)) or all(wrapped_italic(unbold(ln)) for ln in lines))
+
+
+def wrapped_italic(text: str) -> bool:
+    """One <i>…</i> around the whole text, nested italics inside included ("<i>The conception of servitude to <i>Kṛṣṇa</i> generates…</i>" — Panihāṭi)."""
+    s = text.strip()
+    if is_all_italic(s):
+        return True
+    if not (s.startswith("<i>") and s.endswith("</i>")):
+        return False
+    depth = 0
+    for m in re.finditer(r"</?i>", s):
+        depth += 1 if m.group() == "<i>" else -1
+        if depth == 0 and m.end() != len(s):
+            return False
+    return depth == 0
+
+
+# A scripture reference closing a verse's translation ("… Lord, Kṛṣṇa. - CC Madhya 20.108", "- Bg 18.55", "…Personality.' (SB 4.31.14)")
+REF_END_RE = re.compile(r"(?:(?:^|\s|[(\-–—])\(?\s*(?:CC|Cc|Bg|BG|SB|CB|Śrīmad|Bhagavad)\b[^()]{0,40}?\d+(?:[.:]\d+)*(?:\s*[-–]\s*\d+)?|[\-–—(]\s*[A-ZŚṢĀ][^()–—]{1,40}?\(?\d+(?:[.:]\d+)+(?:\s*(?:&|-|–)\s*\d+)?\)?)\s*\)?\.?\s*$")  # (or any source ending on chapter.verse after a dash or bracket: "- Śrī Brahma-saṁhitā 5.30 & 31.", "- Viṣṇu Purāṇa (6.5.47)")
 
 
 ENGLISH_RE = re.compile(r"\b(?:the|and|of|is|are|was|were|in|to|it|that|this|with|for|as|by|from|his|her|who|which|said|says|one|not|be|has|have|you|we|they)\b", re.I)
@@ -683,6 +703,20 @@ def glue(paragraph: dict, text: str) -> None:
 
 def add_block(section: Section, new: dict) -> None:
     last = section.blocks[-1] if section.blocks else None
+    # A verse's translation, printed as one small italic block ending on its reference ("It is the living entity's constitutional position… Lord, Kṛṣṇa. - CC Madhya 20.108"), comes from the reader in pieces.
+    # Its first italic English piece after the verse opens it; the pieces after it (the rest of its lines, a "- Bg 18.55" line) join it until the reference closes it (Panihāṭi).
+    text = new.get("text") or " ".join(new.get("lines") or [])
+    italic_english = new["type"] in ("p", "cite", "quote") and (wrapped_italic(text if new["type"] != "quote" else f"<i>{text}</i>") or bool(new.get("italic"))) and bool(ENGLISH_RE.search(plain(text)))
+    ref_only = new["type"] in ("p", "cite") and bool(REF_END_RE.search(plain(text))) and len(plain(text)) < 40
+    number_only = bool(re.fullmatch(r"\d+(?:[.:]\s?\d+)+(?:\s*[-–]\s*\d+)?\.?", plain(text).strip()))  # the verse number of "- Bg" carried to the next line: "9.10"
+    continued = VERSE_TRANSLATIONS and new["type"] == "p" and plain(text)[:1].islower() and last is not None and last.get("translation") and not ends_sentence(last["text"])  # the rest of a translation the reader gave without its italics: "ing the fallen souls directly…"
+    if last is not None and last.get("translation") and not REF_END_RE.search(plain(last["text"])) and (italic_english or ref_only or number_only or continued or (new.get("verse_line") and REF_END_RE.search(plain(text)))):  # (its centred last line too: "Lord, Kṛṣṇa. - CC Madhya 20.108")
+        glue(last, re.sub(r"</?i>", "", text))
+        return
+    roman_translation = VERSE_TRANSLATIONS and new["type"] == "p" and bool(ENGLISH_RE.search(plain(text))) and bool(REF_END_RE.search(plain(text)))
+    if last is not None and last["type"] == "quote" and (italic_english or roman_translation) and new["type"] != "quote":
+        section.blocks.append({"type": "epigraph", "text": re.sub(r"</?i>", "", text), "translation": True})
+        return
     # A paragraph (or quotation) cut by a page break doesn't end in sentence punctuation — glue the next piece onto it
     # (a quotation only across a page: on one page, two quoted blocks are separate paragraphs as printed)
     # A paragraph opening with a bold label ("<b>In the mode of passion:</b> …") starts afresh, even after a line that ends in a colon
@@ -708,7 +742,8 @@ def add_block(section: Section, new: dict) -> None:
         for prev in reversed(section.blocks[-3:]):
             if prev["type"] in ("p", "entry"):  # a list item can continue onto the next page too
                 # …but never onto a paragraph that truly ended with . ! or ? — a quote mark or comma may close a speech mid-sentence
-                if not plain(prev["text"]).rstrip().endswith((".", "!", "?")) and same_voice(prev, new):
+                # (a lowercase piece ending on a scripture reference is the tail of the translation before it, italic or not: "things but in love. - CC Antya 10.21")
+                if not plain(prev["text"]).rstrip().endswith((".", "!", "?")) and (same_voice(prev, new) or (REF_END_RE.search(plain(new["text"])) and ENGLISH_RE.search(plain(new["text"])))):
                     glue(prev, new["text"])
                     return
                 break
@@ -965,7 +1000,7 @@ def assemble(blocks, contents, unnumbered: set, dropped: set, front_prefixes: tu
         # One italic line set centred, or ending on a daṇḍa, is a line of verse — set centred as printed, joined with the verse lines around it
         # (Hari-bhakti-vilāsa's Upaniṣad passages, Tukarama's poems); the English after it is a paragraph of its own
         # (also a centred Sanskrit line the reader left in roman type: "anyathā dvayor api mahādoṣaḥ")
-        if (blk["label"] == "Text" and "\n" not in blk["text"].strip() and not plain(blk["text"]).strip().endswith(("—", "–"))
+        if (blk["label"] == "Text" and "\n" not in blk["text"].strip() and not plain(blk["text"]).strip().endswith(("—", "–")) and not (REF_END_RE.search(plain(blk["text"])) and ENGLISH_RE.search(plain(blk["text"])))
                 and ((italic_block(blk["text"]) and (blk.get("centred_line") or DANDA_END_RE.search(plain(blk["text"]))))
                      or (blk.get("centred_line") and sanskrit_line(blk["text"])))):
             add_block(current, {"type": "quote", "lines": [plain(blk["text"])], "page": blk["page"], "verse_line": True})
@@ -980,6 +1015,8 @@ def assemble(blocks, contents, unnumbered: set, dropped: set, front_prefixes: tu
     for s in sections:
         for b in s.blocks:
             b.pop("verse_line", None)  # (assembly's own markers)
+            b.pop("translation", None)
+            b.pop("italic", None)
             b.pop("at", None)
         if s.footnotes:
             if not any(b["type"] == "notes-h" for b in s.blocks):
@@ -1198,6 +1235,8 @@ def main():
     front_prefixes = tuple(meta.get("front_sections", []))
     academic = meta.get("academic", False)
     italic_prose = meta.get("italic_prose", False)
+    global VERSE_TRANSLATIONS
+    VERSE_TRANSLATIONS = bool(meta.get("verse_translations"))
     inserted = [dict(x) for x in meta.get("insert_sections", [])]
     for x in inserted:  # a section that starts mid-page opens at its own heading, so the previous section's last lines stay with it: found by the heading text when "at" is not given
         if x.get("at") or x.get("kind") == "part":
