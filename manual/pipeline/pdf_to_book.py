@@ -165,7 +165,9 @@ def page_items(page, body: float, margin: float) -> list[dict]:
     centre = (col_left + col_right) / 2
     col_width = col_right - col_left
     # (a full body line is symmetric too — a centred line also starts well in from the left margin)
-    is_centred = lambda l: abs((l["x0"] + l["x1"]) / 2 - centre) < 4 and l["x0"] > col_left + 8 and l["size"] < 1.4 * body
+    # (a first line indented with typed spaces is never a centred line, even when it also ends early: it is measured from its box, as before spaces were read)
+    start = lambda l: l.get("box_x0", l["x0"]) if l.get("spaced") else l["x0"]  # noqa: E731
+    is_centred = lambda l: abs((start(l) + l["x1"]) / 2 - centre) < 4 and start(l) > col_left + 8 and l["size"] < 1.4 * body  # noqa: E731
     run = []
     for l in items + [None]:
         if l is not None and "object" not in l and is_centred(l) and (not run or l["y"] - run[-1]["y"] < 3 * ROW_GAP):
@@ -523,9 +525,11 @@ def convert(book: str) -> None:
         pdf_text.PAGE_SCALE = pdf_text.page_scales(pdf, body)
         body, pitch, right = body_metrics([page_lines(p) for p in pdf])
     # The body's left edge, for this book's first-line indents (paragraphs are not separated by a gap)
-    starts = Counter(round(l["x0"]) for p in pdf for l in page_lines(p) if l["size"] == body)
+    body_lines = [l for p in pdf for l in page_lines(p) if l["size"] == body]
+    starts = Counter(round(l["x0"]) for l in body_lines)
+    typed = {round(l["x0"]) for l in body_lines if l.get("spaced")}  # (indents typed as spaces: first lines however deep — Radha Govinda Meditation's 35 pt)
     margin = starts.most_common(1)[0][0]
-    first_lines = [x for x in starts if indent_band(x, margin) == 1]
+    first_lines = [x for x in starts if indent_band(x, margin, x in typed) == 1]
     # The usual first-line indent; a book with none separates paragraphs by a gap, so the gaps alone split it
     indent = max(first_lines, key=lambda x: starts[x]) if first_lines else None
     # A skipped page reads as empty, so no text on the next page is glued onto one of its paragraphs and lost with it (an epigraph after a printed contents)

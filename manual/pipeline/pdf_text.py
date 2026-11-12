@@ -189,10 +189,16 @@ def page_lines(page) -> list[dict]:
             if page.number in PAGE_SCALE:
                 size = round(size * PAGE_SCALE[page.number], 1)
                 spans = [{**s, "size": round(s["size"] * PAGE_SCALE[page.number], 1)} for s in spans]
+            # Measured from the first visible character, not the leading spaces: inside a span ("            The research…") from its characters;
+            # an indent stored as a piece of its own, only spaces, before the text piece (Radha Govinda Meditation) from the text span's own start
             x0 = ln["bbox"][0]
-            if ln["spans"] and ln["spans"][0]["text"][:1].isspace():  # measured from the first visible character, not the leading spaces
+            first = next((s for s in ln["spans"] if s["text"].strip()), None)
+            if first is not None and first["text"][:1].isspace():
                 spaced = visible_starts(page) if spaced is None else spaced
-                x0 = spaced.get((round(ln["bbox"][0]), round(ln["bbox"][1])), x0)
+                key = (round(first["bbox"][0]), round(ln["bbox"][1]))
+                x0 = next((spaced[(key[0], key[1] + d)] for d in (0, -1, 1) if (key[0], key[1] + d) in spaced), first["bbox"][0])
+            elif first is not None:
+                x0 = first["bbox"][0]
             lines.append({"spans": spans, "text": text, "size": size, "y": ln["bbox"][1], "x0": x0 + shift, "x1": ln["bbox"][2] + shift, "spaced": x0 > ln["bbox"][0] + 1, "box_x0": ln["bbox"][0] + shift})
     # A typed indent starts where the page's body lines start: only there do the spaces count. A piece in mid-line ("Appreciating Srila Prabhupada's"
     # + "  Bhagavad-gita") or a line of an inset block keeps its box's start, as it always did
