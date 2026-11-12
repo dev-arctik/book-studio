@@ -357,7 +357,8 @@ def paragraphs(pages: list[list[dict]], body: float, pitch: float, right: float,
                 own = lambda ln: bool(HEADING_LINES) and re.sub(r"[^a-z0-9]", "", unicodedata.normalize("NFKD", ln["text"]).encode("ascii", "ignore").decode().lower()) in HEADING_LINES
                 if kind == "p" and (own(l) or own(lines[i - 1])):
                     new = True
-                if kind == "p" and (heading_like(l) or heading_like(lines[i - 1])):
+                broken = lines[i - 1]["text"].rstrip().endswith("-")  # (a capital line after a word broken at a hyphen ends that word: "…I expound HARI-" / "BHAKTI-SUDHODAYA.")
+                if kind == "p" and ((heading_like(l) and not broken) or heading_like(lines[i - 1])):
                     new = True
                 if margin is not None and kind == "p" and not new:
                     before, now = indent_band(lines[i - 1]["x0"], margin, lines[i - 1].get("spaced")), indent_band(l["x0"], margin, l.get("spaced"))

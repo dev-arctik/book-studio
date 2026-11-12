@@ -626,7 +626,8 @@ def convert(book: str) -> None:
         # (a title block is a few short lines: a longer centred paragraph — an epigraph, a chapter's introduction — is text, and ends the block)
         enlarged = lambda p: (sec["kind"] != "front" and p["kind"] == "p" and len(p["text"].split()) <= 20 and abs((p["x0"] + p.get("x1", 0)) / 2 - centre) < 8 and p["runs"]  # noqa: E731
                               and all(r.get("break") or not r["text"].strip() or r["size"] >= body + 0.9 for r in p["runs"]))
-        if cuts and markers[i] and mine and mine[0]["text"].strip() == markers[i]:
+        opening = lambda p: re.sub(r"<[^>]+>", "", " ".join(p["object"].get("lines", [])) if p["kind"] == "object" else p["text"]).strip()  # noqa: E731
+        if cuts and markers[i] and mine and opening(mine[0]) == markers[i]:  # (a centred line counts too: "CHAPTER— II" set centred)
             mine.pop(0)  # the heading line that opens the section repeats its title
         popped = []
         centred_title = lambda p: bool(meta.get("centred_title_block")) and p["kind"] == "object" and p["object"]["type"] == "centred" and sec["kind"] == "chapter"  # noqa: E731  (a chapter whose label and title are centred line objects)
