@@ -11,8 +11,9 @@ import time
 from contextlib import contextmanager
 
 # Cool-down rests, so a laptop reading pages for hours does not run hot (the same idea as Book Studio's work/rest settings)
-WORK_MINUTES = 60  # reading time before a rest
-REST_MINUTES = 15  # the rest after every WORK_MINUTES of reading
+# Devansh, 2026-11-12: 15 min reading / 5 min rest (was 60 / 15) — the GTX 1650 reached 86 °C and thermal-throttled within an hour of WSL OCR
+WORK_MINUTES = 15  # reading time before a rest
+REST_MINUTES = 5  # the rest after every WORK_MINUTES of reading
 BETWEEN_MINUTES = 30  # the rest after every finished book, before the next one is read
 
 
