@@ -327,7 +327,10 @@ def copyright_page(book: str, first_page: int, strip: list = (), only_page: int 
         for rx in strip:
             text = re.sub(rx, "", text)
         return text
-    return [[to_segments(line) for line in stripped(text).split("\n") if line.strip()] for text in best[1]]
+    # a page that also prints the contents (and the start of the preface) below its copyright lines ends where the contents begins (Divine Intoxication)
+    texts = best[1]
+    stop = next((i for i, t in enumerate(texts) if re.match(r"\s*(table of )?contents\s*$", re.sub(r"<[^>]+>", "", t).split("\n")[0], re.I)), len(texts))
+    return [[to_segments(line) for line in stripped(text).split("\n") if line.strip()] for text in texts[:stop]]
 
 
 def build_typst_data(book: str, build_dir: Path) -> dict:

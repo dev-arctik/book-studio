@@ -758,7 +758,7 @@ def convert(book: str) -> None:
     for sec in sections:  # a translation cut off its verse block joins its continuation ("…common men follow in" / "his footsteps…")
         sec["blocks"] = join_cut_paragraphs(sec["blocks"])
     for sec in sections:
-        if re.search(r"dedicat|invocation", sec["title"], re.I):
+        if re.match(r"\W*(dedicat|invocation)", sec["title"], re.I):  # (a section that IS the dedication or invocation — not a chapter about one)
             # A dedication or invocation is set centred: its lines printed larger (small capitals) read as headings, but are its text
             sec["blocks"] = [{"type": "centred", "lines": [b["text"]]} if b["type"] == "h" else b for b in sec["blocks"]]
             sec["blocks"] = tidy_dedication(sec["blocks"])

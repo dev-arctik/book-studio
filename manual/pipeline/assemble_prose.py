@@ -1229,7 +1229,7 @@ def main():
                 if b["type"] == "p" and plain(b.get("text", "")) in meta["right_lines"]:
                     b["type"], b["text"] = "cite", re.sub(r"<sup>.*?</sup>", "", b["text"]).strip()  # (its italics stay: "Author-Translator of <i>Dance of Divine Love</i>")
     for s in sections:
-        if re.search(r"dedicat", s.title, re.I):
+        if re.match(r"\W*dedicat", s.title, re.I):  # (a section that IS the dedication — not a chapter about one: "Bābājī Mahārāja’s Dedication to His Guru")
             s.blocks = tidy_dedication(s.blocks)
 
     # Indexes are matched (so the sections before them end in the right place) but left out: their page numbers would be wrong
