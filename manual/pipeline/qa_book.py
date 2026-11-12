@@ -77,6 +77,9 @@ def pdf_checks(path: Path, real_cyrillic: bool = False) -> list[str]:
     # (book_meta.json "real_cyrillic": the book quotes Russian in its own script — "самиздат" in From the River of Time — which Gentium prints)
     if foreign:
         out.append(f"FAIL words: {len(foreign)} Cyrillic / Devanagari / Bengali runs in the text ({', '.join(sorted(set(foreign))[:4])}) — look-alike letters or photo captions read as text")
+    misread = re.findall(r"\w*jṣ\w*", text)  # "jṣ" is never IAST: a real ñ decoded as a Balaram stand-in ("jñāna" → "jṣāna")
+    if misread:
+        out.append(f"FAIL words: {len(misread)} words with \"jṣ\" ({', '.join(sorted(set(misread))[:4])}) — ñ decoded as a stand-in letter (balaram_fonts)")
     dots = len(re.findall(r"Krṣṇa|Vrṇdā|Śrila|Śrimad|\bŚri\b", text))
     if dots > 3:
         out.append(f"WARN words: {dots} words with a missing macron or dot (Krṣṇa, Śrila, Śri) — restore_r_dot / the Śrī rule")

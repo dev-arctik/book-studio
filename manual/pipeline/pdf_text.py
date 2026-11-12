@@ -26,14 +26,14 @@ BALARAM_FONTS: set[str] = set()  # fonts of this book that carry Balaram's stand
 
 
 def balaram_fonts(pdf) -> set[str]:
-    """Fonts whose text is full of å ë ñ ç (letters English never uses): they hold Balaram-style stand-ins ("Kåñëa"), whatever
+    """Fonts whose text is full of å ë ç (letters neither English nor IAST uses): they hold Balaram-style stand-ins ("Kåñëa"), whatever
     the font is called, so their text is decoded."""
     seen = Counter()
     for page in pdf:
         for block in page.get_text("dict")["blocks"]:
             for ln in block.get("lines", []):
                 for s in ln["spans"]:
-                    seen[s["font"]] += len(re.findall(r"[åëñçÅËÑÇ]", s["text"]))
+                    seen[s["font"]] += len(re.findall(r"[åëçÅËÇ]", s["text"]))  # (not ñ: real IAST has it — "Sañjaya", "jñāna" — Gauranga Gita's Unicode Times was taken for Balaram)
     return {font for font, n in seen.items() if n >= 20} - gnp_fonts(pdf)
 
 
