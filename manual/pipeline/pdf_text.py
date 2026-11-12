@@ -235,6 +235,29 @@ def page_lines(page) -> list[dict]:
     # A running head sits on the same baseline as a page number in the top band ("Strong" + "15"): both go, however rarely the head repeats
     if top_numbers:
         lines = [l for l in lines if not (l["y"] < TOP_BAND * page.rect.height and any(abs(l["y"] - y) < 3 for y in top_numbers))]
+    # Text printed twice over itself (an overprinted layer, cut into lines differently: "Photo 96." and "Photo 96. In this photo…" — From the
+    # River of Time): a line whose text a longer line on the same baseline already holds, over the same stretch, is that line again
+    squash = lambda t: re.sub(r"\s+", "", t)  # noqa: E731
+    # …and where the two layers overlap rather than repeat ("…meant for Index," + "Index, a journal of"), the second piece goes on from where
+    # the first one's text ends. (The document's own order of the lines is kept: pieces on one baseline must not change places.)
+    merged = []
+    for l in lines:
+        hit = next((m for m in reversed(merged) if abs(m["y"] - l["y"]) < 2 and m["x0"] < l["x0"] < m["x1"] - 2 < l["x1"]), None)
+        k = next((n for n in range(min(len(hit["text"]), len(l["text"])), 2, -1) if hit["text"].endswith(l["text"][:n])), 0) if hit else 0
+        if k:
+            rest, cut = [], k  # the second piece's spans without the k characters the first already has
+            for sp in l["spans"]:
+                body = sp["text"].lstrip() if cut == k else sp["text"]
+                drop = min(cut, len(body))
+                cut -= drop
+                if body[drop:]:
+                    rest.append({**sp, "text": body[drop:]})
+            hit.update({"spans": hit["spans"] + rest, "text": hit["text"] + l["text"][k:], "x1": max(hit["x1"], l["x1"])})
+            continue
+        merged.append(l)
+    lines = merged
+    covers = lambda k, l: abs(k["y"] - l["y"]) < 2 and k["x0"] - 2 <= l["x0"] and l["x1"] <= k["x1"] + 2 and squash(l["text"]) in squash(k["text"])  # noqa: E731
+    lines = [l for i, l in enumerate(lines) if not any(covers(k, l) and (len(k["text"]) > len(l["text"]) or j < i) for j, k in enumerate(lines) if j != i)]
     return sorted(lines, key=lambda l: l["y"])
 
 

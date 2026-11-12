@@ -23,7 +23,7 @@ CENTRED_LABEL = re.compile(r"^(section|translation|purport|texts?|synonyms|verse
 GLOSS = re.compile(r"\s=\s")
 
 
-def pdf_checks(path: Path) -> list[str]:
+def pdf_checks(path: Path, real_cyrillic: bool = False) -> list[str]:
     out = []
     doc = pymupdf.open(path)
     first = doc[0]
@@ -73,7 +73,8 @@ def pdf_checks(path: Path) -> list[str]:
         out.append(f"FAIL words: {len(loss)} words look like they lost ligature letters ({', '.join(sorted(set(loss))[:5])}) — word_fixes")
     if re.search(r"[-]", text):
         out.append("FAIL words: private-use characters in the text (an old diacritic font that was not decoded)")
-    foreign = re.findall(r"[Ѐ-ӿऀ-ॿঀ-৿]+", text)  # Gentium has Cyrillic, so a look-alike letter does not show up as a fallback font
+    foreign = re.findall(r"[ऀ-ॿঀ-৿]+" if real_cyrillic else r"[Ѐ-ӿऀ-ॿঀ-৿]+", text)  # Gentium has Cyrillic, so a look-alike letter does not show up as a fallback font
+    # (book_meta.json "real_cyrillic": the book quotes Russian in its own script — "самиздат" in From the River of Time — which Gentium prints)
     if foreign:
         out.append(f"FAIL words: {len(foreign)} Cyrillic / Devanagari / Bengali runs in the text ({', '.join(sorted(set(foreign))[:4])}) — look-alike letters or photo captions read as text")
     dots = len(re.findall(r"Krṣṇa|Vrṇdā|Śrila|Śrimad|\bŚri\b", text))
@@ -146,7 +147,8 @@ def main() -> None:
     failed = 0
     for pdf in sorted((batch / "pdf").glob("*.pdf")):
         key = pdf.stem[:-3] if pdf.stem.endswith("_en") else pdf.stem
-        problems = pdf_checks(pdf)
+        meta = json.loads(local_env.META_FILE.read_text(encoding="utf-8")).get(key, {}) if local_env.META_FILE.is_file() else {}
+        problems = pdf_checks(pdf, bool(meta.get("real_cyrillic")))
         epub = batch / "epub" / (pdf.stem + ".epub")
         problems += epub_checks(epub) if epub.is_file() else ["FAIL epub: missing"]
         problems += data_checks(key)
