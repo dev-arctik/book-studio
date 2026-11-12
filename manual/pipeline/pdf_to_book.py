@@ -284,7 +284,9 @@ def join_cut_paragraphs(blocks: list[dict]) -> list[dict]:
         verse = lambda b: re.fullmatch(r"\s*<i>.*</i>\s*", b.get("text") or "", re.S) and not english(plain(b["text"]))  # noqa: E731
         inset_ok = inset_ok and not (last_p is not None and (verse(last_p) or verse(blk)))
         dangling = dangling if len(prev) >= 60 else None
-        if (blk["type"] in ("p", "blockquote") and last_p is not None and unfinished and not bold_only and inset_ok and (text[:1].islower() or (dangling and text[:1].isupper()))
+        # (or an orphan end: a line of one or two words that closes the sentence — "1968)" after "(Letter, 15 February", "Truth." — set apart by a stray indent)
+        orphan = len(text.split()) <= 2 and bool(re.search(r"[.!?)”’\"]$", text))
+        if (blk["type"] in ("p", "blockquote") and last_p is not None and unfinished and not bold_only and inset_ok and (text[:1].islower() or (dangling and text[:1].isupper()) or orphan)
                 and not re.match(r"(?:<i>)?[^\s—–<.!?]{1,30}(?:[ -][^\s—–<.!?]{1,30}){0,3}(?:</i>)?\s?[—–]\s", blk["text"])):  # a glossary entry ("term – meaning") is a new paragraph, not a continuation — a term holds no sentence end ("chemistry. So okay — nitrogen…" continues)
             # The longer part decides the type: a drop cap's inset first lines + their paragraph is a paragraph; a quotation cut by a page
             # turn ("…established Himself as the Supreme Personality" / "of Godhead by His various activities…") stays a quotation
@@ -559,9 +561,14 @@ def convert(book: str) -> None:
         paras = [p for p in paras if p["page"] + 1 not in picture_pages]
 
         def ink_box(page):
-            """The text and drawings of a text-only page (its page number left out), or None."""
-            ink = [pymupdf.Rect(b[:4]) for b in page.get_text("blocks") if b[4].strip() and not re.fullmatch(r"\s*\d+\s*", b[4])] + [d["rect"] for d in page.get_drawings()]
-            if page.get_images() or not ink:
+            """The text, drawings and small images of a text page (its page number and its own section title left out — the title is printed by us),
+            or None for a page that is mostly a picture (a painting keeps the whole page and its margin trim)."""
+            titles = {ascii_key(t[0]) for t in outline}
+            pictures = [r for im in page.get_images(full=True) for r in page.get_image_rects(im[0])]
+            if any(r.get_area() > 0.5 * page.rect.get_area() for r in pictures):
+                return None
+            ink = [pymupdf.Rect(b[:4]) for b in page.get_text("blocks") if b[4].strip() and not re.fullmatch(r"\s*\d+\s*", b[4]) and ascii_key(b[4]) not in titles] + [d["rect"] for d in page.get_drawings()] + pictures
+            if not ink:
                 return None
             r = ink[0]
             for x in ink[1:]:
@@ -575,7 +582,7 @@ def convert(book: str) -> None:
             w, h = page.rect.width, page.rect.height
             box, exact = [0, 0, w, h], False
             if r := inks[pg]:  # a text-only page (a list in a script Gentium lacks): cropped to its text, or a Letter page prints at 6 pt on A5
-                box, exact = [max(0, column[0] - 12), max(0, r.y0 - 12), min(w, column[1] + 12), min(h, r.y1 + 12)], True
+                box, exact = [max(0, column[0] - 12), max(0, r.y0 - 4), min(w, column[1] + 12), min(h, r.y1 + 12)], True
             paras.append({"kind": "object", "runs": [], "text": "", "page": pg - 1, "object": {
                 "type": "figure", "page": pg, "bbox": box, "image_bbox": [0, 0, w, h], "caption": "", "wide": True, "exact": exact}})  # (exact: the crop is kept as is, no margin trim)
         paras.sort(key=lambda p: p["page"])  # a stable sort: the order within a page is kept

@@ -313,6 +313,10 @@ def paragraphs(pages: list[list[dict]], body: float, pitch: float, right: float,
                 if margin is not None and kind == "p" and not new:
                     before, now = indent_band(lines[i - 1]["x0"], margin, lines[i - 1].get("spaced")), indent_band(l["x0"], margin, l.get("spaced"))
                     new = before != now and (before, now) != (1, 0)  # a first line's indent followed by full lines is one paragraph
+                    prev_text = lines[i - 1]["text"].strip()
+                    title_case = len(prev_text.split()) <= 8 and all(w[:1].isupper() or not w[:1].isalpha() for w in prev_text.split())
+                    if l.get("spaced") and lines[i - 1].get("spaced") and (prev_text.endswith(TERMINAL) or title_case):
+                        new = True  # two typed indents in a row: the first was a one-line paragraph ("Radha Govinda Yogapitha Dhyana") — not a sentence that goes on ("…was empowered to spread")
                     if DEEP_FIRST_LINES and (before, now) == (2, 1):
                         new = False  # a quote's deeper first line, then its lines at the normal first-line indent
                     if (before, now) == (0, 1) and indent is not None and abs(l["x0"] - indent) > 2.5 and not l.get("spaced"):  # (an indent typed as spaces is always a first line)
