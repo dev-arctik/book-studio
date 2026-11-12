@@ -179,8 +179,8 @@ def page_items(page, body: float, margin: float) -> list[dict]:
         spread = max(x["x0"] for x in run) - min(x["x0"] for x in run) if run else 0
         # (two short centred lines a few points apart are a verse too — "shruti-smrti-…" / "aikantiki harer…", 7.6 pt; an indented quotation's lines start at one x)
         style = lambda x: (round(x["size"], 1), all(s["italic"] for s in x["spans"] if s["text"].strip()), all(s["bold"] for s in x["spans"] if s["text"].strip()))  # noqa: E731
-        short_lines = (len(run) >= 2 and spread > 3 and all(x["x1"] - x["x0"] < 0.8 * col_width for x in run)
-                       and len({style(x) for x in run}) == 1)  # (one style: a story's bold title and its italic date line are no verse)
+        short_lines = (len(run) >= 2 and spread > 3 and all(x["x1"] - x["x0"] < 0.8 * col_width and abs(x["size"] - body) < 0.5 for x in run)
+                       and len({style(x) for x in run}) == 1)  # (one style: a story's bold title and its italic date line are no verse; body size: a two-line 16 pt heading is no verse — O'Hare's "In an Ambassador with")
         if (len(run) >= 2 and spread > 15) or short_lines or single:
             italic = all(s["italic"] for x in run for s in x["spans"] if s["text"].strip())
             obj = ({"type": "quote", "lines": [x["text"] for x in run]} if italic
@@ -291,7 +291,10 @@ def join_cut_paragraphs(blocks: list[dict]) -> list[dict]:
         dangling = dangling if len(prev) >= 60 else None
         # (or an orphan end: a line of one or two words that closes the sentence — "1968)" after "(Letter, 15 February", "Truth." — set apart by a stray indent)
         orphan = len(text.split()) <= 2 and bool(re.search(r"[.!?)”’\"]$", text))
-        if (blk["type"] in ("p", "blockquote") and last_p is not None and unfinished and not bold_only and inset_ok and (text[:1].islower() or (dangling and text[:1].isupper()) or orphan)
+        # (a glossary entry "term: meaning" too — "babaji: One who…", "nama aparadha: Offense…" after an entry with no full stop; a term holds no ordinary word, so "and he said: …" continues)
+        term = re.match(r"([^\s:.!?;<]{1,30}(?:,?[ -][^\s:.!?;<]{1,30}){0,2}): \S", text)
+        colon_entry = bool(term) and not english(term.group(1) + " the")
+        if (blk["type"] in ("p", "blockquote") and last_p is not None and unfinished and not bold_only and inset_ok and not colon_entry and (text[:1].islower() or (dangling and text[:1].isupper()) or orphan)
                 and not re.match(r"(?:<i>)?[^\s—–<.!?]{1,30}(?:[ -][^\s—–<.!?]{1,30}){0,3}(?:</i>)?\s?[—–]\s", blk["text"])):  # a glossary entry ("term – meaning") is a new paragraph, not a continuation — a term holds no sentence end ("chemistry. So okay — nitrogen…" continues)
             # The longer part decides the type: a drop cap's inset first lines + their paragraph is a paragraph; a quotation cut by a page
             # turn ("…established Himself as the Supreme Personality" / "of Godhead by His various activities…") stays a quotation
