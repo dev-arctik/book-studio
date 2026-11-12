@@ -622,7 +622,7 @@ def convert(book: str) -> None:
         short = lambda p: len((p.get("text") or "").split()) <= 20 and not re.match(r"\d+\.(?:[\s​]|$)", (p.get("text") or "").strip())  # noqa: E731  (a boxed quotation above the chapter label is text, not part of the title; nor is the first numbered story, "1." + its title)
         while not meta.get("no_title_block") and mine and short(mine[0]) and (mine[0]["kind"] not in ("p", "object") or enlarged(mine[0]) or centred_title(mine[0])):  # "no_title_block": chapters start straight with their first story, no title page
             head = mine.pop(0)
-            popped.append(re.sub(r"\s+", " ", " ".join(re.sub(r"<[^>]+>", "", l) for l in head["object"]["lines"]) if head["kind"] == "object" else " ".join(r["text"].strip() for r in head["runs"] if not r.get("break"))).strip())
+            popped.append(re.sub(r"\s+", " ", " ".join(re.sub(r"<[^>]+>", "", l) for l in head["object"]["lines"]) if head["kind"] == "object" else "".join(" " if r.get("break") else r["text"] for r in head["runs"])).strip())  # (runs as they are: a diacritic set in its own font is a run of its own — "Avat" + "ā" + "ra")
             author = " ".join(r["text"].strip() for r in head["runs"] if not r.get("break") and r.get("italic") and r["text"].strip())
             if author and not part_of_title(author, sec["title"]):  # (an italic title's own lines are not its author)
                 sec["subtitle"] = re.sub(r"\s+", " ", author)
@@ -757,6 +757,11 @@ def convert(book: str) -> None:
     line_settings(sections, meta)
     for sec in sections:  # a translation cut off its verse block joins its continuation ("…common men follow in" / "his footsteps…")
         sec["blocks"] = join_cut_paragraphs(sec["blocks"])
+        # A heading is set bold by the design: its own <b> tags only make it patchy where a diacritic's font is not flagged bold
+        # ("<b>N</b>ā<b>rada Muni</b>" — Gaurāṅga), in the heading and in the contents; italics stay
+        for blk in sec["blocks"]:
+            if blk["type"] == "h":
+                blk["text"] = re.sub(r"\s+", " ", re.sub(r"</?b>", "", blk["text"])).strip()
     for sec in sections:
         if re.match(r"\W*(dedicat|invocation)", sec["title"], re.I):  # (a section that IS the dedication or invocation — not a chapter about one)
             # A dedication or invocation is set centred: its lines printed larger (small capitals) read as headings, but are its text
