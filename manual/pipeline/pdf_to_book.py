@@ -363,6 +363,11 @@ def line_settings(sections: list[dict], meta: dict) -> None:
                     out.append(b)
             sec["blocks"] = out
         print(f"verse {lines[0]!r}…: {hits}" if hits else f"WARNING: verse_lines {lines[0]!r} matched nothing")
+    # "plain_sections" [title, …]: a list section whose lines only look like headings (a source list in capitals: "NJNK 28.05.91 SB 7.4.41")
+    plain_titles = set(meta.get("plain_sections", []))
+    for sec in sections:
+        if sec["title"] in plain_titles:
+            sec["blocks"] = [{"type": "p", "text": b["text"]} if b["type"] == "h" else b for b in sec["blocks"]]
     if meta.get("normal_case_openings"):
         normal_case_openings(sections, meta["normal_case_openings"])
 
