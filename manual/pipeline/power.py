@@ -15,6 +15,11 @@ from contextlib import contextmanager
 WORK_MINUTES = 20  # reading time before a rest
 REST_MINUTES = 10  # the rest after every WORK_MINUTES of reading
 BETWEEN_MINUTES = 20  # the rest after every finished book, before the next one is read
+# A rest ends only once the laptop has cooled (Devansh, 2026-11-12): measured after a rest on the ASUS TUF the GPU sat at ~61 °C and the CPU at ~68 °C,
+# against 86 °C / 96 °C while reading with other jobs running. Above these, the rest goes on minute by minute and says what is loading the CPU.
+GPU_COOL_C = 65
+CPU_COOL_C = 75
+COOL_CHECK_MINUTES = 1
 
 
 def battery() -> tuple[int, bool] | None:
@@ -65,14 +70,74 @@ def work_state(state_file) -> None:
     set_state(state_file, mode="working", next_rest=time.time() + WORK_MINUTES * 60)
 
 
+def gpu_temp() -> float | None:
+    """The NVIDIA GPU's temperature in °C (nvidia-smi), or None where there is none."""
+    try:
+        out = subprocess.run(["nvidia-smi", "--query-gpu=temperature.gpu", "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=15).stdout
+        return max(float(x) for x in out.split())
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
+def cpu_temp() -> float | None:
+    """The hottest Windows thermal zone in °C (typeperf reads it without admin rights; it reports Kelvin), or None elsewhere or when unreadable."""
+    if os.name != "nt":
+        return None
+    try:
+        out = subprocess.run(["typeperf", r"\Thermal Zone Information(*)\Temperature", "-sc", "1"], capture_output=True, text=True, timeout=30).stdout
+        row = [line for line in out.splitlines() if line.startswith('"') and "/" in line][-1]  # the sample row starts with a quoted date
+        return max(float(v.strip('"')) for v in row.split(",")[1:] if v.strip('"')) - 273.15
+    except (OSError, ValueError, IndexError, subprocess.SubprocessError):
+        return None
+
+
+def busiest(n: int = 4) -> str:
+    """The processes using the most CPU right now (over one second), to say what keeps a laptop hot."""
+    try:
+        import psutil
+
+        procs = [p for p in psutil.process_iter(["name"]) if p.pid != 0]  # pid 0 = Windows' "System Idle Process", which is idle time, not load
+        for p in procs:
+            try:
+                p.cpu_percent(None)  # first call only starts the measurement
+            except psutil.Error:
+                pass
+        time.sleep(1)
+        load = []
+        for p in procs:
+            try:
+                load.append((p.cpu_percent(None) / psutil.cpu_count(), p.info["name"]))
+            except psutil.Error:
+                pass
+        return ", ".join(f"{name} {pct:.0f}%" for pct, name in sorted(load, reverse=True)[:n] if pct >= 1) or "nothing busy"
+    except Exception:  # noqa: BLE001 — a process list is only advice
+        return "unknown"
+
+
+def cooled() -> tuple[bool, str]:
+    """(cool enough to read, a line with the temperatures). A sensor that can't be read never holds reading back."""
+    gpu, cpu = gpu_temp(), cpu_temp()
+    ok = (gpu is None or gpu <= GPU_COOL_C) and (cpu is None or cpu <= CPU_COOL_C)
+    fmt = lambda t: "n/a" if t is None else f"{t:.0f} °C"  # noqa: E731
+    return ok, f"GPU {fmt(gpu)} (≤ {GPU_COOL_C}), CPU {fmt(cpu)} (≤ {CPU_COOL_C})"
+
+
 def rest(minutes: float, why: str, state_file=None) -> None:
-    """Waits (in short steps, so Ctrl+C acts at once) and says when reading goes on."""
+    """Waits (in short steps, so Ctrl+C acts at once), then keeps resting minute by minute until the laptop has cooled, and says when reading goes on."""
     resume = time.time() + minutes * 60
     set_state(state_file, mode="resting", until=resume, why=why)
-    print(f"[{time.strftime('%H:%M:%S')}] Resting {minutes:g} min ({why}) — reading continues at {time.strftime('%H:%M', time.localtime(resume))}", flush=True)
-    while time.time() < resume:
-        time.sleep(min(5, max(0.01, resume - time.time())))
-    print(f"[{time.strftime('%H:%M:%S')}] Rest over — reading continues", flush=True)
+    print(f"[{time.strftime('%H:%M:%S')}] Resting {minutes:g} min ({why}) — reading continues at {time.strftime('%H:%M', time.localtime(resume))} if the laptop has cooled", flush=True)
+    while True:
+        while time.time() < resume:
+            time.sleep(min(5, max(0.01, resume - time.time())))
+        ok, temps = cooled()
+        if ok:
+            break
+        # Still hot: say what is loading the computer (other jobs keep it warm too) and rest another minute
+        resume = time.time() + COOL_CHECK_MINUTES * 60
+        set_state(state_file, mode="resting", until=resume, why=f"still hot: {temps}")
+        print(f"[{time.strftime('%H:%M:%S')}] Still hot — {temps}; busiest: {busiest()}. Resting {COOL_CHECK_MINUTES} more min", flush=True)
+    print(f"[{time.strftime('%H:%M:%S')}] Rest over — {temps} — reading continues", flush=True)
     work_state(state_file)
 
 
