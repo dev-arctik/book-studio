@@ -393,6 +393,8 @@ def paragraphs(pages: list[list[dict]], body: float, pitch: float, right: float,
                     title_case = len(prev_text.split()) <= 8 and all(w[:1].isupper() or not w[:1].isalpha() for w in prev_text.split())
                     if l.get("spaced") and lines[i - 1].get("spaced") and (prev_text.endswith(TERMINAL) or title_case):
                         new = True  # two typed indents in a row: the first was a one-line paragraph ("Radha Govinda Yogapitha Dhyana") — not a sentence that goes on ("…was empowered to spread")
+                    if (before, now) == (1, 1) and lines[i - 1]["x1"] < right - 40 and (prev_text.endswith(TERMINAL) or title_case) and not re.search(r"\d\)", prev_text):  # (not a first line cut short by a drop cap or a picture: "…was empowered to spread"; nor a justified list line "Akṣobhya, 10) Jayatīrtha, … 13)")
+                        new = True  # two first-line indents in a row, the first ending well short of the margin: a one-line paragraph (a letter's "I hope you are well." / "Yours Sincerely" / "A.C. Bhaktivedanta Swami")
                     if DEEP_FIRST_LINES and (before, now) == (2, 1):
                         new = False  # a quote's deeper first line, then its lines at the normal first-line indent
                     if (before, now) == (0, 1) and indent is not None and abs(l["x0"] - indent) > 2.5 and not l.get("spaced"):  # (an indent typed as spaces is always a first line)
